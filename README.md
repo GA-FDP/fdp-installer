@@ -7,7 +7,7 @@ Note that for the instructions below you can substitute ```mamba``` or ```microm
 Here's the procedure:
 
 ```
-conda install -c ga-fdp -c conda-forge -n fdp-installer fdp-installer
+conda create -c ga-fdp -c conda-forge -n fdp-installer fdp-installer
 ```
 Note that the ```-n``` argument is arbitrary. You can name the installer environment whatever you want.
 
@@ -41,7 +41,14 @@ cd /path/to/project
 pixi shell
 ```
 
+## Developing the installer itself
 
+The distribution mechanism for the installer is as a conda package. To build the package,
+just go to ```fdp-installer/conda-recipe``` and run
+
+```
+rattler-build build
+``` 
 
 
 
