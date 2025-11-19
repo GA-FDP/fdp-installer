@@ -1,9 +1,18 @@
 # Fusion Data Platform Installer
 
-To install the FDP:
+The Fusion Data Platform uses pixi to manage its various package dependencies. The simplest way to get set up is to first install the ```fdp-installer``` conda package and the run the ```fdp-install``` script.
+
+Note that for the instructions below you can substitute ```mamba``` or ```micromamba``` for ```conda```, depending on your local setup.
+
+Here's the procedure:
 
 ```
-conda install -c ga-fdp fdp-installer
+conda install -c ga-fdp -c conda-forge -n fdp-installer fdp-installer
+```
+Note that the ```-n``` argument is arbitrary. You can name the installer environment whatever you want.
+
+```
+conda activate fdp-installer # or whatever you names the install environment
 ```
 
 ## Install in current directory
