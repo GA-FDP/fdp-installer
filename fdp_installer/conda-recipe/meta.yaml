@@ -1,0 +1,47 @@
+{% set name = "fdp-installer" %}
+{% set version = "0.1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ../..
+
+build:
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv
+  noarch: python
+  entry_points:
+    - fdp-install = fdp_installer.bin.fdp_install:main
+
+requirements:
+  host:
+    - python >=3.11
+    - pip
+    - setuptools
+  run:
+    - python >=3.11
+    - pixi
+
+test:
+  imports:
+    - fdp_installer
+  commands:
+    - fdp-install --help
+
+about:
+  home: https://github.com/ga-fdp/fdp-installer
+  license: Apache 2.0
+  license_family: APACHE
+  license_file: LICENSE
+  summary: Bootstrap installer for Fusion Data Platform
+  description: |
+    FDP Installer is a bootstrap package that installs the fdp-install script,
+    which uses pixi to manage mixed conda and pip package environments for
+    the Fusion Data Platform.
+  dev_url: https://github.com/ga-fdp/fdp-installer
+
+extra:
+  recipe-maintainers:
+    - fdp-team

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fdp-installer"
+version = "0.1.0"
+description = "Bootstrap installer for Fusion Data Platform"
+readme = "README.md"
+authors = [
+    {name = "FDP Team", email = "fdp@example.com"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/ga-fdp/fdp-installer"
+Repository = "https://github.com/ga-fdp/fdp-installer"
+
+[project.scripts]
+fdp-install = "fdp_installer.bin.fdp_install:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fdp_installer*"]
+
+[tool.setuptools.package-data]
+fdp_installer = ["bin/*", "pixi.toml"]
