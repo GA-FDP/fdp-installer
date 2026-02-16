@@ -1,22 +1,21 @@
 [project]
 name = "fdp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fusion Data Platform - Mixed conda and pip package environment"
 authors = ["FDP Team <fdp@example.com>"]
 channels = ["conda-forge", "ga-fdp"]
 platforms = ["linux-64"]
 
 [dependencies]
-python = "3.11.*"
-toksearch_d3d = "*"
-#ray-tune = "2.34.0"
+python = "3.12.*"
+toksearch_d3d = "0.2.*"
 pip = "*"
 platformdirs = ">=3.1.1,<4"
 protobuf = "<5"
 attrs = "<24"
 
 [pypi-dependencies]
-cmflib = { git = "https://github.com/sammuli/cmf.git", branch = "update_ray_version" }
+cmflib = { git = "https://github.com/sammuli/cmf.git", branch = "fdp_installer_rebase" }
 
 [tasks]
 # Define custom tasks here

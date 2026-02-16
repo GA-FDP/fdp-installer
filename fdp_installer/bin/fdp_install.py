@@ -9,10 +9,9 @@ import sys
 import os
 import shutil
 from pathlib import Path
-try:
-    from importlib.resources import files
-except ImportError:
-    from importlib_resources import files
+
+# Bundled pixi.toml lives alongside this script's parent package
+_BUNDLED_PIXI_TOML = Path(__file__).resolve().parent.parent / "pixi.toml"
 
 
 def run_command(cmd, check=True):
@@ -45,16 +44,11 @@ def check_pixi_installed():
 def copy_pixi_toml():
     """Copy pixi.toml from package to current directory if it doesn't exist."""
     if not Path("pixi.toml").exists():
-        try:
-            # Get the pixi.toml from the package
-            fdp_installer_files = files('fdp_installer')
-            pixi_toml_data = (fdp_installer_files / 'pixi.toml').read_text()
-            with open("pixi.toml", "w") as f:
-                f.write(pixi_toml_data)
-            print("Copied pixi.toml to current directory")
-        except Exception as e:
-            print(f"Error copying pixi.toml: {e}")
+        if not _BUNDLED_PIXI_TOML.is_file():
+            print(f"Error: bundled pixi.toml not found at {_BUNDLED_PIXI_TOML}")
             sys.exit(1)
+        shutil.copy2(_BUNDLED_PIXI_TOML, "pixi.toml")
+        print("Copied pixi.toml to current directory")
     else:
         print("pixi.toml already exists in current directory")
 

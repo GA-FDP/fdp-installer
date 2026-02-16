@@ -1,0 +1,12 @@
+[workspace]
+name = "fdp-installer"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+pip = "*"
+pixi = "*"
+
+[pypi-dependencies]
+fdp-installer = { path = ".", editable = true }
