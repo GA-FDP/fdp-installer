@@ -101,6 +101,30 @@ class TestFdpInstaller(unittest.TestCase):
 
     def test_8_fdp_run_ptdata_fetch(self):
         """Fetch real DIII-D data via PtDataSignal under fdp run."""
+        # First, dump diagnostics for debugging CI failures
+        diag_script = textwrap.dedent("""\
+            import os, pathlib
+            prefix = os.environ.get("CONDA_PREFIX", "NOT SET")
+            print(f"CONDA_PREFIX={prefix}")
+            print(f"BEARER_TOKEN={'set' if os.environ.get('BEARER_TOKEN') else 'NOT SET'}")
+            print(f"XRD_PLUGINCONFDIR={os.environ.get('XRD_PLUGINCONFDIR', 'NOT SET')}")
+            print(f"PTDATA_JSON_INDEX_DIR={os.environ.get('PTDATA_JSON_INDEX_DIR', 'NOT SET')}")
+            print(f"PTDATA_PLUGIN_LIB={os.environ.get('PTDATA_PLUGIN_LIB', 'NOT SET')}")
+            plugdir = os.environ.get("XRD_PLUGINCONFDIR", "")
+            if plugdir and pathlib.Path(plugdir).is_dir():
+                for f in sorted(pathlib.Path(plugdir).iterdir()):
+                    print(f"  plugin conf: {f.name}")
+                    print(f"    {f.read_text().strip()}")
+            else:
+                print(f"  Plugin dir missing or not set")
+            libdir = pathlib.Path(prefix) / "lib" if prefix != "NOT SET" else None
+            if libdir:
+                pelican_libs = sorted(libdir.glob("libXrdClPelican*"))
+                print(f"  Pelican libs: {[p.name for p in pelican_libs]}")
+        """)
+        diag = self._pixi_run("fdp", "run", "python", "-c", diag_script)
+        print(diag.stdout)
+
         script = textwrap.dedent("""\
             from toksearch_d3d import PtDataSignal
             result = PtDataSignal("ip", fetch_times=True, fetch_units=True).fetch(165920)
