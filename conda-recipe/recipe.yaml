@@ -1,6 +1,9 @@
+context:
+  version: ${{ env.get("PKG_VERSION") }}
+
 package:
   name: fdp-installer
-  version: 0.2.0
+  version: ${{ version }}
 
 source:
   path: ..
@@ -15,6 +18,7 @@ requirements:
     - python >=3.11
     - pip
     - setuptools
+    - versioneer
   run:
     - python >=3.11
     - pixi
@@ -27,9 +31,9 @@ tests:
       content:
         - fdp-install --help
         - python tests/testit.py
-      files:
-        source:
-          - tests/
+    files:
+      source:
+        - tests/
 
 about:
   homepage: https://github.com/ga-fdp/fdp-installer
