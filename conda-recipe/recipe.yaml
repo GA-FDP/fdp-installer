@@ -24,7 +24,12 @@ tests:
       imports:
         - fdp_installer
   - script:
-      - fdp-install --help
+      content:
+        - fdp-install --help
+        - python tests/testit.py
+      files:
+        source:
+          - tests/
 
 about:
   homepage: https://github.com/ga-fdp/fdp-installer
