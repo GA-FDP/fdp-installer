@@ -28,6 +28,8 @@ tests:
       imports:
         - fdp_installer
   - script:
+      env:
+        BEARER_TOKEN: ${{ env.get("BEARER_TOKEN", default="") }}
       content:
         - fdp-install --help
         - python tests/testit.py
