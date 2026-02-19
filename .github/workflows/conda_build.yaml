@@ -28,6 +28,9 @@ jobs:
       - name: Build Conda package
         env:
           BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
+          # ga-dfl-labeler has __glibc <2.35 constraint from its build env;
+          # override so it installs on newer Ubuntu CI runners
+          CONDA_OVERRIDE_GLIBC: "2.28"
         run: |
           pixi global install rattler-build
           cd conda-recipe && bash run_build.sh ${HOME}/outdir
