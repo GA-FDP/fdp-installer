@@ -19,6 +19,7 @@ protobuf = "<5"
 attrs = "<24"
 paramiko = "==3.4.1"
 pathspec = "==0.12.1"
+ga-dfl-labeler = "==1.0.0"
 
 [pypi-dependencies]
 cmflib = { git = "https://github.com/sammuli/cmf.git", branch = "fdp_installer_rebase" }
