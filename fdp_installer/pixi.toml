@@ -1,14 +1,12 @@
 [workspace]
-name = "fdp"
-version = "0.2.0"
-description = "Fusion Data Platform - Mixed conda and pip package environment"
-authors = ["FDP Team <fdp@example.com>"]
+name = "fdp_dev"
+description = "Dev environment for the Fusion Data Platform - Mixed conda and pip package environment"
 channels = ["conda-forge", "ga-fdp"]
 platforms = ["linux-64"]
 
 [dependencies]
 python = "3.11.*"
-toksearch_d3d = ">=0.2.2"
+toksearch_d3d = ">=0.2.3"
 pip = "*"
 
 # cmflib exact-pins paramiko==3.4.1 and pathspec==0.12.1, which
