@@ -53,24 +53,47 @@ def copy_pixi_toml():
         print("pixi.toml already exists in current directory")
 
 
-def install_fdp(target_dir):
+def install_skills(target_dir):
+    """Install Claude Code skills via the fdp CLI in the pixi environment."""
+    print("Installing Claude Code skills...")
+    result = subprocess.run(
+        [
+            "pixi", "run",
+            "--manifest-path", str(target_dir / "pixi.toml"),
+            "fdp", "skills", "install",
+        ],
+        text=True,
+    )
+    if result.returncode != 0:
+        print("Warning: skill installation failed. Run 'fdp skills install' manually.")
+
+
+def install_fdp(target_dir, install_skills_flag=False):
     """Install FDP in the specified directory."""
     print(f"Installing FDP in directory: {target_dir}")
-    
+
     # Change to target directory
     original_dir = os.getcwd()
     os.chdir(target_dir)
-    
+
     try:
         # Ensure pixi.toml is available
         copy_pixi_toml()
-        
+
         # Install dependencies using pixi
         run_command(["pixi", "install", "-vv"])
-        
+
+        if install_skills_flag:
+            install_skills(target_dir)
+        else:
+            print(
+                "\nTo install Claude Code skills for FDP API assistance, run:\n"
+                "  fdp skills install"
+            )
+
         print("FDP installation completed")
         print(f"To activate the environment, run: cd {target_dir} && pixi shell")
-        
+
     finally:
         # Return to original directory
         os.chdir(original_dir)
@@ -85,18 +108,22 @@ def main():
         default=".",
         help="Directory to install FDP in (default: current directory)"
     )
-    
+    parser.add_argument(
+        "--install-skills", action="store_true",
+        help="Also install Claude Code skills to ~/.claude/skills/"
+    )
+
     args = parser.parse_args()
-    
+
     # Check if pixi is installed (should always be available with fdp-installer)
     check_pixi_installed()
-    
+
     # Create target directory if it doesn't exist
     target_dir = Path(args.directory).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Install FDP in the specified directory
-    install_fdp(target_dir)
+    install_fdp(target_dir, install_skills_flag=args.install_skills)
 
 
 if __name__ == "__main__":
