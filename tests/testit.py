@@ -143,5 +143,27 @@ class TestFdpInstaller(unittest.TestCase):
         self.assertTrue(len(result.stdout.strip()) > 0, "fdp ls returned no output")
 
 
+    # ── Skills tests ────────────────────────────────────────────────
+
+    def test_10_skills_install(self):
+        """Verify fdp skills install creates skill dirs in ~/.claude/skills/."""
+        result = self._pixi_run("fdp", "skills", "install")
+        self._assert_ok(result, "fdp skills install failed")
+
+        skills_dir = Path.home() / ".claude" / "skills"
+        self.assertTrue(skills_dir.is_dir(), "~/.claude/skills/ was not created")
+
+        installed = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        for skill in ["toksearch-pipeline", "toksearch-d3d-ptdata"]:
+            self.assertIn(skill, installed, f"Skill {skill!r} not found in {skills_dir}")
+
+    def test_11_skills_list(self):
+        """Verify fdp skills list shows installed skills."""
+        result = self._pixi_run("fdp", "skills", "list")
+        self._assert_ok(result, "fdp skills list failed")
+        for skill in ["toksearch-pipeline", "toksearch-d3d-ptdata"]:
+            self.assertIn(skill, result.stdout, f"{skill!r} missing from fdp skills list output")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
