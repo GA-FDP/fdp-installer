@@ -25,12 +25,21 @@ jobs:
         with:
           pixi-version: latest
 
+      - name: Set staging channel for pre-release builds
+        if: startsWith(github.ref, 'refs/tags/release-')
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/release-}"
+          if [[ "$VERSION" =~ (rc|a|b)[0-9] ]]; then
+            echo "EXTRA_CHANNEL=ga-fdp/label/staging" >> $GITHUB_ENV
+          fi
+
       - name: Build Conda package
         env:
           BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
           # ga-dfl-labeler has __glibc <2.35 constraint from its build env;
           # override so it installs on newer Ubuntu CI runners
           CONDA_OVERRIDE_GLIBC: "2.28"
+          EXTRA_CHANNEL: ${{ env.EXTRA_CHANNEL }}
         run: |
           pixi global install rattler-build
           cd conda-recipe && bash run_build.sh ${HOME}/outdir
@@ -38,8 +47,15 @@ jobs:
       - name: Upload to Anaconda
         if: startsWith(github.ref, 'refs/tags/release-')
         run: |
+          VERSION="${GITHUB_REF#refs/tags/release-}"
+          if [[ "$VERSION" =~ (rc|a|b)[0-9] ]]; then
+            LABEL="staging"
+          else
+            LABEL="main"
+          fi
           rattler-build upload anaconda \
             --owner ga-fdp \
+            --label "$LABEL" \
             --api-key ${{ secrets.ANACONDA_API_TOKEN }} \
             --force \
             ${HOME}/outdir/noarch/*.conda

@@ -26,7 +26,7 @@ where = ["."]
 include = ["fdp_installer*"]
 
 [tool.setuptools.package-data]
-fdp_installer = ["bin/*", "pixi.toml"]
+fdp_installer = ["bin/*", "pixi.toml", "pixi-staging.toml"]
 
 [tool.versioneer]
 VCS = "git"
