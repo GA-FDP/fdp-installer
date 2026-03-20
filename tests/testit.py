@@ -16,6 +16,13 @@ class TestFdpInstaller(unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp(prefix="fdp_test_")
         cls.install_dir = Path(cls.tmpdir) / "fdp_env"
+        # Run fdp-install once here so all tests have a fully-configured
+        # environment regardless of the order in which they execute.
+        cls.install_result = subprocess.run(
+            ["fdp-install", "-d", str(cls.install_dir)],
+            capture_output=True,
+            text=True,
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -48,9 +55,8 @@ class TestFdpInstaller(unittest.TestCase):
     # ── Installation tests ──────────────────────────────────────────
 
     def test_1_install(self):
-        """Run fdp-install into a fresh temp directory."""
-        result = self._run(["fdp-install", "-d", str(self.install_dir)])
-        self._assert_ok(result, "fdp-install failed")
+        """Verify fdp-install completed successfully."""
+        self._assert_ok(self.install_result, "fdp-install failed")
 
     def test_2_pixi_toml_deployed(self):
         """Verify pixi.toml was copied to the target directory."""
