@@ -6,7 +6,13 @@ platforms = ["linux-64"]
 
 [dependencies]
 python = "3.11.*"
-toksearch_d3d = ">=0.4.0"
+toksearch_d3d = ">=0.9.6"
+# fdp is NOT a runtime dependency of toksearch_d3d (it's only in
+# toksearch_d3d's test deps), so without an explicit floor the solver pulls an
+# old fdp (0.2.0). Pin it: fdp >=0.2.4 is the version that emits
+# PTDATA_JSON_INDEX_PATTERN, which the d3d.yaml parent-dir + json_indexes_*
+# snapshot resolution (ptdata >=2.0.9 / toksearch_d3d >=0.9.6) relies on.
+fdp = ">=0.2.4"
 pip = "*"
 
 # cmflib exact-pins paramiko==3.4.1 and pathspec==0.12.1, which
