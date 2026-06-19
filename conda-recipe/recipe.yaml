@@ -30,6 +30,12 @@ tests:
   - script:
       env:
         BEARER_TOKEN: ${{ env.get("BEARER_TOKEN", default="") }}
+        # testit.py runs `fdp-install` + `pixi run`, which solve/install the
+        # full FDP env. ga-dfl-labeler carries a `__glibc <2.35` constraint
+        # from its build host; modern CI runners report glibc 2.39, so the
+        # solve fails without this override. The workflow sets it for the
+        # build step, but rattler-build's test sandbox doesn't inherit it.
+        CONDA_OVERRIDE_GLIBC: "2.28"
       content:
         - fdp-install --help
         - python tests/testit.py
