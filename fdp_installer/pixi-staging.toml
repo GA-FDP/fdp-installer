@@ -8,8 +8,8 @@ platforms = ["linux-64"]
 python = "3.11.*"
 toksearch_d3d = ">=0.9.6"
 # See pixi.toml: fdp isn't a runtime dep of toksearch_d3d, so pin it explicitly
-# so the index_pattern feature (PTDATA_JSON_INDEX_PATTERN) is emitted.
-fdp = ">=0.2.4"
+# (>=0.3.0 brings fdp login / SciToken auth plus the index_pattern feature).
+fdp = ">=0.3.0"
 pip = "*"
 
 # cmflib exact-pins paramiko==3.4.1 and pathspec==0.12.1, which
