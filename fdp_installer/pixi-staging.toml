@@ -6,7 +6,9 @@ platforms = ["linux-64"]
 
 [dependencies]
 python = "3.11.*"
-toksearch_d3d = ">=0.9.6"
+# 0.9.7 adds CakeSignal auto-download of the CAKE DB from Pelican (pulls in a
+# filelock run-dep transitively).
+toksearch_d3d = ">=0.9.7"
 # See pixi.toml: fdp isn't a runtime dep of toksearch_d3d, so pin it explicitly
 # (>=0.3.0 brings fdp login / SciToken auth plus the index_pattern feature).
 fdp = ">=0.3.0"
