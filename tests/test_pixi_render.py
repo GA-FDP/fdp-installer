@@ -14,7 +14,7 @@ def test_default_uses_stable_core():
     text = render_pixi_toml()
     assert 'fdp-core = "*"' in text
     assert "fdp-core-latest" not in text
-    assert "[feature.cmf]" not in text
+    assert "[feature.cmf.dependencies]" not in text
 
 
 def test_latest_flavor():
@@ -25,11 +25,13 @@ def test_latest_flavor():
 
 def test_with_cmf_adds_feature_and_pins():
     text = render_pixi_toml(with_cmf=True)
-    assert "[feature.cmf]" in text
+    assert "[feature.cmf.dependencies]" in text
+    assert "[feature.cmf.pypi-dependencies]" in text
     assert "protobuf" in text and "<5" in text
     assert 'paramiko = "==3.4.1"' in text
     assert "cmflib" in text  # pypi git dep
-    assert 'cmf = ["cmf"]' in text or 'cmf"' in text  # environment wired
+    # cmf feature activated in the default env (installer runs plain `pixi install`)
+    assert "cmf" in text.split("[environments]")[1]
 
 
 def test_with_labeler_adds_package():

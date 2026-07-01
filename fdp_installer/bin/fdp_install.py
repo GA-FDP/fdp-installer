@@ -56,12 +56,12 @@ black = "*"
 '''
     if with_cmf:
         text += _CMF_FEATURE
+    # The installer runs a plain `pixi install` (the default environment), so the
+    # cmf feature must be activated in `default` for --with-cmf to take effect.
     text += f'''
 [environments]
 default = {envs!r}
 '''
-    if with_cmf:
-        text += 'cmf = ["dev", "cmf"]\n'
     return text
 
 
