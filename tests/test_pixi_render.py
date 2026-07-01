@@ -70,3 +70,11 @@ def test_write_pixi_toml_skips_when_present(tmp_path, monkeypatch):
     (tmp_path / "pixi.toml").write_text("SENTINEL")
     write_pixi_toml()
     assert (tmp_path / "pixi.toml").read_text() == "SENTINEL"
+
+
+def test_default_device_is_d3d_in_all_combos():
+    import tomllib
+    for kwargs in [{}, {"latest": True}, {"with_cmf": True}, {"with_labeler": True}]:
+        text = render_pixi_toml(**kwargs)
+        doc = tomllib.loads(text)
+        assert doc["activation"]["env"]["FDP_DEFAULT_DEVICE"] == "d3d", kwargs

@@ -46,6 +46,12 @@ platforms = ["linux-64"]
 [dependencies]
 {chr(10).join(deps)}
 
+[activation.env]
+# fdp-core registers multiple tokamaks (d3d, mast), so `fdp env`/`fdp run` have
+# no unambiguous default. FDP is DIII-D-primary, so default to d3d; MAST stays
+# available per-command via `fdp --default-device mast ...` or FDP_DEFAULT_DEVICE.
+FDP_DEFAULT_DEVICE = "d3d"
+
 [tasks]
 
 [feature.dev.dependencies]
