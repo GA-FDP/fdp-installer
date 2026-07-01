@@ -46,12 +46,6 @@ platforms = ["linux-64"]
 [dependencies]
 {chr(10).join(deps)}
 
-[activation.env]
-# fdp-core registers multiple tokamaks (d3d, mast), so `fdp env`/`fdp run` have
-# no unambiguous default. FDP is DIII-D-primary, so default to d3d; MAST stays
-# available per-command via `fdp --default-device mast ...` or FDP_DEFAULT_DEVICE.
-FDP_DEFAULT_DEVICE = "d3d"
-
 [tasks]
 
 [feature.dev.dependencies]
@@ -123,6 +117,23 @@ def install_skills(target_dir):
         print("Warning: skill installation failed. Run 'fdp skills install' manually.")
 
 
+def _print_device_selection_note():
+    """Tell the user how to choose a tokamak, since fdp-core registers several.
+
+    fdp-core is multi-device (DIII-D + MAST), so `fdp env`/`fdp run`/`fdp ls`
+    require an explicit choice. We do not pick one for the user.
+    """
+    print(
+        "\nThis environment includes multiple tokamaks (DIII-D 'd3d', MAST 'mast').\n"
+        "Select a default for the `fdp` CLI in any one of these ways:\n"
+        "  - per command:  fdp --default-device d3d <subcommand> ...\n"
+        "  - environment:  export FDP_DEFAULT_DEVICE=d3d\n"
+        "  - config file:  add to ~/.fdp/config.toml:\n"
+        "                    [device]\n"
+        '                    default = "d3d"'
+    )
+
+
 def install_fdp(target_dir, install_skills_flag=False,
                 latest=False, with_cmf=False, with_labeler=False):
     """Install FDP in the specified directory."""
@@ -149,6 +160,7 @@ def install_fdp(target_dir, install_skills_flag=False,
 
         print("FDP installation completed")
         print(f"To activate the environment, run: cd {target_dir} && pixi shell")
+        _print_device_selection_note()
 
     finally:
         # Return to original directory

@@ -72,9 +72,7 @@ def test_write_pixi_toml_skips_when_present(tmp_path, monkeypatch):
     assert (tmp_path / "pixi.toml").read_text() == "SENTINEL"
 
 
-def test_default_device_is_d3d_in_all_combos():
-    import tomllib
-    for kwargs in [{}, {"latest": True}, {"with_cmf": True}, {"with_labeler": True}]:
-        text = render_pixi_toml(**kwargs)
-        doc = tomllib.loads(text)
-        assert doc["activation"]["env"]["FDP_DEFAULT_DEVICE"] == "d3d", kwargs
+def test_no_activation_default_device():
+    # The installer does not pick a device for the user; fdp-core is
+    # multi-device and the fdp CLI requires an explicit choice.
+    assert "FDP_DEFAULT_DEVICE" not in render_pixi_toml()

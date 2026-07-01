@@ -39,10 +39,17 @@ class TestFdpInstaller(unittest.TestCase):
         )
 
     def _pixi_run(self, *args, **kwargs):
-        """Run a command via pixi in the deployed environment."""
+        """Run a command via pixi in the deployed environment.
+
+        fdp-core is multi-device (d3d + mast) and the fdp CLI requires an
+        explicit device choice, so select DIII-D via FDP_DEFAULT_DEVICE for
+        these tests (harmless for non-device commands like imports/skills).
+        """
+        env = {**os.environ, "FDP_DEFAULT_DEVICE": "d3d", **kwargs.pop("env", {})}
         return self._run(
             ["pixi", "run", *args],
             cwd=str(self.install_dir),
+            env=env,
             **kwargs,
         )
 
