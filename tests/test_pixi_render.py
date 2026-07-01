@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import tomllib
 
 _SPEC = importlib.util.spec_from_file_location(
     "fdp_install",
@@ -8,6 +9,7 @@ _SPEC = importlib.util.spec_from_file_location(
 fdp_install = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(fdp_install)
 render_pixi_toml = fdp_install.render_pixi_toml
+write_pixi_toml = fdp_install.write_pixi_toml
 
 
 def test_default_uses_stable_core():
@@ -37,3 +39,34 @@ def test_with_cmf_adds_feature_and_pins():
 def test_with_labeler_adds_package():
     text = render_pixi_toml(with_labeler=True)
     assert "ga-dfl-labeler" in text
+    assert 'ga-dfl-labeler = "==1.0.0"' in text
+
+
+def test_all_combinations_parse_as_toml():
+    import tomllib
+    combos = [
+        ({}, ["dev"]),
+        ({"latest": True}, ["dev"]),
+        ({"with_cmf": True}, ["dev", "cmf"]),
+        ({"with_labeler": True}, ["dev"]),
+        ({"latest": True, "with_cmf": True}, ["dev", "cmf"]),
+        ({"with_cmf": True, "with_labeler": True}, ["dev", "cmf"]),
+    ]
+    for kwargs, expected_default in combos:
+        text = render_pixi_toml(**kwargs)
+        doc = tomllib.loads(text)  # raises on malformed TOML
+        assert doc["environments"]["default"] == expected_default, kwargs
+
+
+def test_write_pixi_toml_writes_when_absent(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    write_pixi_toml()
+    assert (tmp_path / "pixi.toml").exists()
+    assert 'fdp-core = "*"' in (tmp_path / "pixi.toml").read_text()
+
+
+def test_write_pixi_toml_skips_when_present(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pixi.toml").write_text("SENTINEL")
+    write_pixi_toml()
+    assert (tmp_path / "pixi.toml").read_text() == "SENTINEL"

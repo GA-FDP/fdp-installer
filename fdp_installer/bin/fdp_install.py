@@ -12,19 +12,20 @@ from pathlib import Path
 
 _CMF_FEATURE = '''
 # Opt-in provenance layer. cmflib is a PyPI git dep; ml-metadata is pip-only, so
-# this MUST be a pixi feature — it cannot live in the fdp-core conda metapackage.
+# this MUST be a pixi feature -- it cannot live in the fdp-core conda metapackage.
 [feature.cmf.dependencies]
 python = "3.11.*"
 protobuf = "<5"
 attrs = "<24"
 paramiko = "==3.4.1"
 pathspec = "==0.12.1"
+platformdirs = ">=3.1.1,<4"
 
 [feature.cmf.pypi-dependencies]
 cmflib = { git = "https://github.com/sammuli/cmf.git", branch = "fdp_installer_rebase" }
 '''
 
-_LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint\n'
+_LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint'
 
 
 def render_pixi_toml(latest: bool = False, with_cmf: bool = False,
@@ -32,7 +33,7 @@ def render_pixi_toml(latest: bool = False, with_cmf: bool = False,
     core = "fdp-core-latest" if latest else "fdp-core"
     deps = [f'{core} = "*"']
     if with_labeler:
-        deps.append(_LABELER_DEP.strip())
+        deps.append(_LABELER_DEP)
     envs = ["dev"]
     if with_cmf:
         envs.append("cmf")
@@ -54,9 +55,10 @@ black = "*"
         text += _CMF_FEATURE
     # The installer runs a plain `pixi install` (the default environment), so the
     # cmf feature must be activated in `default` for --with-cmf to take effect.
+    default_env = "[" + ", ".join(f'"{e}"' for e in envs) + "]"
     text += f'''
 [environments]
-default = {envs!r}
+default = {default_env}
 '''
     return text
 
@@ -88,11 +90,12 @@ def check_pixi_installed():
         sys.exit(1)
 
 
-def copy_pixi_toml(latest=False, with_cmf=False, with_labeler=False):
+def write_pixi_toml(latest=False, with_cmf=False, with_labeler=False):
     """Render pixi.toml into the current directory if it doesn't exist."""
     if not Path("pixi.toml").exists():
         Path("pixi.toml").write_text(
-            render_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler)
+            render_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler),
+            encoding="utf-8",
         )
         print("Wrote pixi.toml to current directory")
     else:
@@ -125,7 +128,7 @@ def install_fdp(target_dir, install_skills_flag=False,
 
     try:
         # Ensure pixi.toml is available
-        copy_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler)
+        write_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler)
 
         # Install dependencies using pixi
         run_command(["pixi", "install", "-vv"])
