@@ -118,7 +118,8 @@ def install_skills(target_dir):
         print("Warning: skill installation failed. Run 'fdp skills install' manually.")
 
 
-def install_fdp(target_dir, install_skills_flag=False):
+def install_fdp(target_dir, install_skills_flag=False,
+                latest=False, with_cmf=False, with_labeler=False):
     """Install FDP in the specified directory."""
     print(f"Installing FDP in directory: {target_dir}")
 
@@ -128,7 +129,7 @@ def install_fdp(target_dir, install_skills_flag=False):
 
     try:
         # Ensure pixi.toml is available
-        copy_pixi_toml()
+        copy_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler)
 
         # Install dependencies using pixi
         run_command(["pixi", "install", "-vv"])
@@ -162,6 +163,12 @@ def main():
         "--install-skills", action="store_true",
         help="Also install Claude Code skills to ~/.claude/skills/"
     )
+    parser.add_argument("--latest", action="store_true",
+                        help="Use the rolling fdp-core-latest metapackage")
+    parser.add_argument("--with-cmf", action="store_true",
+                        help="Add the CMF provenance layer (pins Python 3.11)")
+    parser.add_argument("--with-labeler", action="store_true",
+                        help="Add ga-dfl-labeler (has a glibc <2.35 constraint)")
 
     args = parser.parse_args()
 
@@ -173,7 +180,13 @@ def main():
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # Install FDP in the specified directory
-    install_fdp(target_dir, install_skills_flag=args.install_skills)
+    install_fdp(
+        target_dir,
+        install_skills_flag=args.install_skills,
+        latest=args.latest,
+        with_cmf=args.with_cmf,
+        with_labeler=args.with_labeler,
+    )
 
 
 if __name__ == "__main__":
