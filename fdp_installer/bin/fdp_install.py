@@ -7,11 +7,7 @@ import argparse
 import subprocess
 import sys
 import os
-import shutil
 from pathlib import Path
-
-# Bundled pixi.toml lives alongside this script's parent package
-_BUNDLED_PIXI_TOML = Path(__file__).resolve().parent.parent / "pixi.toml"
 
 
 _CMF_FEATURE = '''
