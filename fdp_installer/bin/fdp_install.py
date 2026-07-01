@@ -14,6 +14,57 @@ from pathlib import Path
 _BUNDLED_PIXI_TOML = Path(__file__).resolve().parent.parent / "pixi.toml"
 
 
+_CMF_FEATURE = '''
+# Opt-in provenance layer. cmflib is a PyPI git dep; ml-metadata is pip-only, so
+# this MUST be a pixi feature — it cannot live in the fdp-core conda metapackage.
+[feature.cmf.dependencies]
+python = "3.11.*"
+protobuf = "<5"
+attrs = "<24"
+paramiko = "==3.4.1"
+pathspec = "==0.12.1"
+
+[feature.cmf.pypi-dependencies]
+cmflib = { git = "https://github.com/sammuli/cmf.git", branch = "fdp_installer_rebase" }
+'''
+
+_LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint\n'
+
+
+def render_pixi_toml(latest: bool = False, with_cmf: bool = False,
+                     with_labeler: bool = False) -> str:
+    core = "fdp-core-latest" if latest else "fdp-core"
+    deps = [f'{core} = "*"']
+    if with_labeler:
+        deps.append(_LABELER_DEP.strip())
+    envs = ["dev"]
+    if with_cmf:
+        envs.append("cmf")
+    text = f'''[workspace]
+name = "fdp_dev"
+description = "Fusion Data Platform environment (slim core via fdp-core metapackage)"
+channels = ["conda-forge", "ga-fdp"]
+platforms = ["linux-64"]
+
+[dependencies]
+{chr(10).join(deps)}
+
+[tasks]
+
+[feature.dev.dependencies]
+black = "*"
+'''
+    if with_cmf:
+        text += _CMF_FEATURE
+    text += f'''
+[environments]
+default = {envs!r}
+'''
+    if with_cmf:
+        text += 'cmf = ["dev", "cmf"]\n'
+    return text
+
+
 def run_command(cmd, check=True):
     """Run a command and return the result."""
     print(f"Running: {' '.join(cmd)}")
@@ -41,14 +92,13 @@ def check_pixi_installed():
         sys.exit(1)
 
 
-def copy_pixi_toml():
-    """Copy pixi.toml from package to current directory if it doesn't exist."""
+def copy_pixi_toml(latest=False, with_cmf=False, with_labeler=False):
+    """Render pixi.toml into the current directory if it doesn't exist."""
     if not Path("pixi.toml").exists():
-        if not _BUNDLED_PIXI_TOML.is_file():
-            print(f"Error: bundled pixi.toml not found at {_BUNDLED_PIXI_TOML}")
-            sys.exit(1)
-        shutil.copy2(_BUNDLED_PIXI_TOML, "pixi.toml")
-        print("Copied pixi.toml to current directory")
+        Path("pixi.toml").write_text(
+            render_pixi_toml(latest=latest, with_cmf=with_cmf, with_labeler=with_labeler)
+        )
+        print("Wrote pixi.toml to current directory")
     else:
         print("pixi.toml already exists in current directory")
 
