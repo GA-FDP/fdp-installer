@@ -59,7 +59,7 @@ class TestFdpInstaller(unittest.TestCase):
         self._assert_ok(self.install_result, "fdp-install failed")
 
     def test_2_pixi_toml_deployed(self):
-        """Verify pixi.toml was copied to the target directory."""
+        """Verify pixi.toml was written to the target directory."""
         pixi_toml = self.install_dir / "pixi.toml"
         self.assertTrue(pixi_toml.exists(), "pixi.toml not found in install dir")
 
@@ -69,10 +69,15 @@ class TestFdpInstaller(unittest.TestCase):
         self.assertTrue(pixi_dir.is_dir(), ".pixi/ directory not created")
 
     def test_4_imports(self):
-        """Verify key packages are importable in the deployed environment."""
+        """Verify the fdp-core packages are importable in the deployed env.
+
+        The default install is the slim fdp-core set (no CMF — that is opt-in
+        via `fdp-install --with-cmf`), so this imports the core data-access
+        stack rather than cmflib.
+        """
         result = self._pixi_run(
             "python", "-c",
-            "import toksearch_d3d; import cmflib; print('OK')",
+            "import toksearch, toksearch_d3d, toksearch_mast, fdp, imas_composer; print('OK')",
         )
         self._assert_ok(result, "Package imports failed")
         self.assertIn("OK", result.stdout)
