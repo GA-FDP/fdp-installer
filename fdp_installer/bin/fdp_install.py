@@ -118,19 +118,21 @@ def install_skills(target_dir):
 
 
 def _print_device_selection_note():
-    """Tell the user how to choose a tokamak, since fdp-core registers several.
+    """Report which devices are available.
 
-    fdp-core is multi-device (DIII-D + MAST), so `fdp env`/`fdp run`/`fdp ls`
-    require an explicit choice. We do not pick one for the user.
+    fdp >= 0.5.0 composes all installed devices' environments and scopes
+    per-command resolution by capability, so no selection is normally needed.
     """
     print(
-        "\nThis environment includes multiple tokamaks (DIII-D 'd3d', MAST 'mast').\n"
-        "Select a default for the `fdp` CLI in any one of these ways:\n"
-        "  - per command:  fdp --default-device d3d <subcommand> ...\n"
+        "\nThis environment includes multiple tokamaks (DIII-D 'd3d', "
+        "MAST 'mast').\n"
+        "No selection is required: `fdp env`/`fdp run` combine both, and\n"
+        "`fdp ls`/`fdp login` pick the device that can service them.\n"
+        "To pin one anyway:\n"
+        "  - per command:  fdp --device d3d <subcommand> ...\n"
         "  - environment:  export FDP_DEFAULT_DEVICE=d3d\n"
-        "  - config file:  add to ~/.fdp/config.toml:\n"
-        "                    [device]\n"
-        '                    default = "d3d"'
+        "  - persistent:   fdp device use d3d\n"
+        "Run `fdp device list` to see what is installed."
     )
 
 
