@@ -25,15 +25,29 @@ def test_latest_flavor():
     assert 'fdp-core = "*"' not in text
 
 
-def test_with_cmf_adds_feature_and_pins():
-    text = render_pixi_toml(with_cmf=True)
-    assert "[feature.cmf.dependencies]" in text
-    assert "[feature.cmf.pypi-dependencies]" in text
-    assert "protobuf" in text and "<5" in text
-    assert 'paramiko = "==3.4.1"' in text
-    assert "cmflib" in text  # pypi git dep
-    # cmf feature activated in the default env (installer runs plain `pixi install`)
-    assert "cmf" in text.split("[environments]")[1]
+def test_no_cmf_feature_and_no_pip_install():
+    """CMF arrives via the fdp-core metapackage, not a pixi feature.
+
+    Until 2026-09-02 cmflib had to be a pixi pypi-dependency pointing at a git
+    fork, because ml-metadata was pip-only and could not appear in a conda
+    metapackage. Both are conda packages on ga-fdp now, so fdp-core carries
+    cmflib directly and --with-cmf is gone. Nothing here should reintroduce a
+    pip path.
+    """
+    for kwargs in ({}, {"latest": True}, {"with_labeler": True}):
+        text = render_pixi_toml(**kwargs)
+        assert "[feature.cmf.dependencies]" not in text, kwargs
+        assert "pypi-dependencies" not in text, kwargs
+        assert "cmflib" not in text, kwargs
+        assert "github.com/sammuli/cmf" not in text, kwargs
+
+
+def test_with_cmf_argument_is_gone():
+    """render_pixi_toml no longer accepts with_cmf."""
+    import pytest
+
+    with pytest.raises(TypeError):
+        render_pixi_toml(with_cmf=True)
 
 
 def test_with_labeler_adds_package():
@@ -47,10 +61,8 @@ def test_all_combinations_parse_as_toml():
     combos = [
         ({}, ["dev"]),
         ({"latest": True}, ["dev"]),
-        ({"with_cmf": True}, ["dev", "cmf"]),
         ({"with_labeler": True}, ["dev"]),
-        ({"latest": True, "with_cmf": True}, ["dev", "cmf"]),
-        ({"with_cmf": True, "with_labeler": True}, ["dev", "cmf"]),
+        ({"latest": True, "with_labeler": True}, ["dev"]),
     ]
     for kwargs, expected_default in combos:
         text = render_pixi_toml(**kwargs)

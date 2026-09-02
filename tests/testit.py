@@ -78,9 +78,8 @@ class TestFdpInstaller(unittest.TestCase):
     def test_4_imports(self):
         """Verify the fdp-core packages are importable in the deployed env.
 
-        The default install is the slim fdp-core set (no CMF — that is opt-in
-        via `fdp-install --with-cmf`), so this imports the core data-access
-        stack rather than cmflib.
+        fdp-core carries cmflib as of 2026-09-02, so the default install
+        includes the provenance layer -- there is no opt-in flag any more.
         """
         result = self._pixi_run(
             "python", "-c",
