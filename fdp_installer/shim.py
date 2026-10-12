@@ -110,6 +110,10 @@ def build_command(args, *, runtime, cwd, home, env, tty, image, extra):
     if cwd == "/":
         raise ShimError("refusing to run from /: cd into a project directory first")
     cmd = [runtime, "run", "--rm", "-i"]
+    if runtime == "podman":
+        # Rootless podman otherwise maps the host uid to root and the image's fdp
+        # user to an unreadable subuid; this maps the host user onto uid 1000.
+        cmd.append("--userns=keep-id:uid=1000,gid=1000")
     if runtime == "container":
         cmd += ["--arch", "amd64"]
     else:

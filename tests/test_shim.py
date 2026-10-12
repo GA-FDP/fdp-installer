@@ -121,12 +121,16 @@ def _cmd(args, runtime="podman", tty=False, env=None, mounts=(), cwd=CWD):
 def test_build_command_podman_basic():
     cmd = _cmd(["run", "python", "s.py"])
     assert cmd == [
-        "podman", "run", "--rm", "-i", "--platform", "linux/amd64",
+        "podman", "run", "--rm", "-i", "--userns=keep-id:uid=1000,gid=1000", "--platform", "linux/amd64",
         "-v", f"{HOME}/.fdp:/home/fdp/.fdp",
         "-v", f"{HOME}/.config/pelican:/home/fdp/.config/pelican",
         "-v", f"{CWD}:{CWD}", "-w", CWD,
         "ghcr.io/ga-fdp/fdp:1.28.0", "run", "python", "s.py",
     ]
+
+
+def test_build_command_docker_has_no_userns():
+    assert not any(a.startswith("--userns") for a in _cmd(["ls", "/"], runtime="docker"))
 
 
 def test_build_command_tty_adds_t_only_when_interactive():
