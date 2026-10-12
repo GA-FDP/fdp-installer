@@ -42,3 +42,11 @@ def test_no_fdp_core_raises():
     fetch = lambda url: json.dumps({"packages": {}, "packages.conda": {}})
     with pytest.raises(RuntimeError):
         latest_core_version(fetch)
+
+
+def test_fetch_failure_becomes_runtime_error_with_hint():
+    import pytest
+    def fetch(url):
+        raise OSError("no network")
+    with pytest.raises(RuntimeError, match="--core-version"):
+        latest_core_version(fetch)

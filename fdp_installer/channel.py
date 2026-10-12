@@ -22,13 +22,18 @@ def latest_core_version(fetch=_fetch) -> str:
     `packages.conda` the current ones; reading one alone reports stale
     versions. Comparison is on integer tuples, never on strings.
     """
-    repodata = json.loads(fetch(REPODATA_URL))
+    try:
+        repodata = json.loads(fetch(REPODATA_URL))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(
+            f"could not read {REPODATA_URL}: {e}\n"
+            "Pass --core-version <x.y.z> to skip the channel lookup.") from e
     best = None
     for key in ("packages", "packages.conda"):
         for meta in repodata.get(key, {}).values():
             if meta.get("name") != "fdp-core":
                 continue
-            m = _RELEASE.match(meta["version"])
+            m = _RELEASE.fullmatch(meta.get("version", ""))
             if not m:
                 continue
             tup = tuple(int(x) for x in m.groups())
