@@ -106,3 +106,10 @@ def test_core_version_with_latest_is_rejected():
 def test_core_version_parses_as_toml():
     doc = tomllib.loads(render_pixi_toml(core_version="1.28.0"))
     assert doc["dependencies"]["fdp-core"] == "==1.28.0"
+
+
+def test_render_subcommand_prints_pinned_toml(capsys):
+    fdp_install.main(["render", "--core-version", "1.28.0"])
+    out = capsys.readouterr().out
+    doc = tomllib.loads(out)
+    assert doc["dependencies"]["fdp-core"] == "==1.28.0"

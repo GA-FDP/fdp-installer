@@ -72,11 +72,12 @@ def check_pixi_installed():
         sys.exit(1)
 
 
-def write_pixi_toml(latest=False, with_labeler=False):
+def write_pixi_toml(latest=False, with_labeler=False, core_version=None):
     """Render pixi.toml into the current directory if it doesn't exist."""
     if not Path("pixi.toml").exists():
         Path("pixi.toml").write_text(
-            render_pixi_toml(latest=latest, with_labeler=with_labeler),
+            render_pixi_toml(latest=latest, with_labeler=with_labeler,
+                             core_version=core_version),
             encoding="utf-8",
         )
         print("Wrote pixi.toml to current directory")
@@ -119,7 +120,7 @@ def _print_device_selection_note():
 
 
 def install_fdp(target_dir, install_skills_flag=False,
-                latest=False, with_labeler=False):
+                latest=False, with_labeler=False, core_version=None):
     """Install FDP in the specified directory."""
     print(f"Installing FDP in directory: {target_dir}")
 
@@ -129,7 +130,8 @@ def install_fdp(target_dir, install_skills_flag=False,
 
     try:
         # Ensure pixi.toml is available
-        write_pixi_toml(latest=latest, with_labeler=with_labeler)
+        write_pixi_toml(latest=latest, with_labeler=with_labeler,
+                        core_version=core_version)
 
         # Install dependencies using pixi
         run_command(["pixi", "install", "-vv"])
@@ -151,10 +153,7 @@ def install_fdp(target_dir, install_skills_flag=False,
         os.chdir(original_dir)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="FDP Installer - Bootstrap script for Fusion Data Platform"
-    )
+def _add_install_args(parser):
     parser.add_argument(
         "--directory", "-d",
         default=".",
@@ -168,22 +167,40 @@ def main():
                         help="Use the rolling fdp-core-latest metapackage")
     parser.add_argument("--with-labeler", action="store_true",
                         help="Add ga-dfl-labeler (has a glibc <2.35 constraint)")
+    parser.add_argument("--core-version", default=None,
+                        help="Pin an exact fdp-core version instead of the newest")
 
-    args = parser.parse_args()
 
-    # Check if pixi is installed (should always be available with fdp-installer)
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "render":
+        parser = argparse.ArgumentParser(
+            prog="fdp-install render",
+            description="Print the pixi.toml fdp-install would write")
+        parser.add_argument("--latest", action="store_true")
+        parser.add_argument("--with-labeler", action="store_true")
+        parser.add_argument("--core-version", default=None)
+        args = parser.parse_args(argv[1:])
+        sys.stdout.write(render_pixi_toml(
+            latest=args.latest, with_labeler=args.with_labeler,
+            core_version=args.core_version))
+        return
+
+    parser = argparse.ArgumentParser(
+        description="FDP Installer - Bootstrap script for Fusion Data Platform"
+    )
+    _add_install_args(parser)
+    args = parser.parse_args(argv)
+
     check_pixi_installed()
-
-    # Create target directory if it doesn't exist
     target_dir = Path(args.directory).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    # Install FDP in the specified directory
     install_fdp(
         target_dir,
         install_skills_flag=args.install_skills,
         latest=args.latest,
         with_labeler=args.with_labeler,
+        core_version=args.core_version,
     )
 
 
