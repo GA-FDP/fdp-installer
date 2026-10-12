@@ -1,0 +1,82 @@
+name: Container image
+
+on:
+  workflow_dispatch:
+    inputs:
+      fdp_core_version:
+        description: "Exact fdp-core version to bake (must already be on ga-fdp main)"
+        required: true
+      push:
+        description: "Push to GHCR (false = build and test only)"
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [fdp-core-released]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.inputs.fdp_core_version || github.event.client_payload.version }}
+      IMAGE: ghcr.io/ga-fdp/fdp
+      # Named here so a later step can test it; `secrets` is not allowed in `if:`.
+      BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse to build without a version
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "::error::no fdp-core version given (dispatch input or client_payload.version)"
+            exit 1
+          fi
+          echo "Building $IMAGE:$VERSION"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Render the installer's pixi.toml for this bless
+        run: |
+          python -m pip install -q .
+          fdp-install render --core-version "$VERSION" > container/pixi.toml
+          cat container/pixi.toml
+
+      - name: Build (the self-check runs inside the build)
+        run: docker build -f container/Containerfile -t "$IMAGE:$VERSION" container/
+
+      - name: Smoke test
+        run: |
+          docker run --rm "$IMAGE:$VERSION" --help | grep -qE "\brun\b"
+          docker run --rm "$IMAGE:$VERSION" device list
+          docker run --rm --user 1000 "$IMAGE:$VERSION" shell -c 'test -w /work && echo "/work writable"'
+
+      - name: Live fetch over Pelican
+        # Not `if:`-gated on the secret: a missing token must be visible, not a
+        # silent skip. Forks without the secret get a clear "skipped" line.
+        run: |
+          if [ -z "$BEARER_TOKEN" ]; then
+            echo "::warning::BEARER_TOKEN is empty; live fetch skipped"
+            exit 0
+          fi
+          docker run --rm -e BEARER_TOKEN -v "$PWD/container":/work -w /work \
+            "$IMAGE:$VERSION" run python live_check.py
+
+      - name: Log in to GHCR
+        if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push version tag and latest
+        if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
+        run: |
+          docker push "$IMAGE:$VERSION"
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+          echo "Pushed $IMAGE:$VERSION and :latest"
+          echo "::notice::First publish of a package name is PRIVATE on GHCR. Set visibility to public once in the org's package settings, then re-run the anonymous-pull check."
