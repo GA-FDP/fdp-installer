@@ -30,68 +30,116 @@ def test_find_runtime_none_raises_with_install_hint():
     assert "colima" in str(e.value)
 
 
+def _home(tmp_path):
+    h = tmp_path / "home"
+    h.mkdir()
+    return h
+
+
 def test_extra_mounts_ignores_args_inside_cwd(tmp_path):
-    (tmp_path / "s.py").write_text("")
-    assert shim.extra_mounts(["run", "python", "s.py"], cwd=str(tmp_path)) == []
-    assert shim.extra_mounts(["run", "python", str(tmp_path / "s.py")], cwd=str(tmp_path)) == []
+    home = _home(tmp_path)
+    cwd = home / "proj"
+    cwd.mkdir()
+    (cwd / "s.py").write_text("")
+    assert shim.extra_mounts(["run", "python", str(cwd / "s.py")], cwd=str(cwd), home=str(home)) == []
 
 
 def test_extra_mounts_mounts_parent_of_outside_path_read_only(tmp_path):
-    other = tmp_path / "elsewhere"
+    home = _home(tmp_path)
+    other = home / "elsewhere"
     other.mkdir()
     script = other / "s.py"
     script.write_text("")
-    cwd = tmp_path / "proj"
+    cwd = home / "proj"
     cwd.mkdir()
-    mounts = shim.extra_mounts(["run", "python", str(script)], cwd=str(cwd))
-    assert mounts == [f"{other}:{other}:ro"]
+    r = os.path.realpath(other)
+    assert shim.extra_mounts(["run", "python", str(script)], cwd=str(cwd), home=str(home)) == [f"{r}:{r}:ro"]
 
 
 def test_extra_mounts_dedupes_and_skips_nonpaths(tmp_path):
-    other = tmp_path / "o"
+    home = _home(tmp_path)
+    other = home / "o"
     other.mkdir()
     (other / "a").write_text("")
     (other / "b").write_text("")
-    cwd = tmp_path / "p"
+    cwd = home / "p"
     cwd.mkdir()
     args = ["run", "python", str(other / "a"), str(other / "b"), "--flag", "not/a/real/path"]
-    assert shim.extra_mounts(args, cwd=str(cwd)) == [f"{other}:{other}:ro"]
+    r = os.path.realpath(other)
+    assert shim.extra_mounts(args, cwd=str(cwd), home=str(home)) == [f"{r}:{r}:ro"]
 
 
-def test_extra_mounts_never_mounts_home_or_root(tmp_path):
-    cwd = tmp_path / "p"
+def test_extra_mounts_never_mounts_home_itself(tmp_path):
+    home = _home(tmp_path)
+    cwd = home / "p"
     cwd.mkdir()
-    home = str(tmp_path)
-    (tmp_path / "top.py").write_text("")
-    # A file directly under $HOME would mount all of $HOME; refuse that.
-    assert shim.extra_mounts(["run", "python", str(tmp_path / "top.py")],
-                             cwd=str(cwd), home=home) == []
+    (home / "top.py").write_text("")
+    assert shim.extra_mounts(["run", "python", str(home / "top.py")],
+                             cwd=str(cwd), home=str(home)) == []
+
+
+def test_extra_mounts_ignores_paths_outside_home(tmp_path):
+    home = _home(tmp_path)
+    cwd = home / "p"
+    cwd.mkdir()
+    assert shim.extra_mounts(["run", "/usr/bin"], cwd=str(cwd), home=str(home)) == []
+
+
+def test_extra_mounts_ignores_relative_args(tmp_path, monkeypatch):
+    home = _home(tmp_path)
+    cwd = home / "p"
+    cwd.mkdir()
+    other = home / "o"
+    other.mkdir()
+    (other / "s.py").write_text("")
+    monkeypatch.chdir(other)
+    assert shim.extra_mounts(["run", "python", "s.py"], cwd=str(cwd), home=str(home)) == []
+
+
+def test_extra_mounts_symlink_mounts_real_dir_at_written_path(tmp_path):
+    t = os.path.realpath(tmp_path)
+    home = os.path.join(t, "home")
+    os.makedirs(os.path.join(home, "real"))
+    os.makedirs(os.path.join(home, "proj"))
+    open(os.path.join(home, "real", "s.py"), "w").close()
+    os.symlink(os.path.join(home, "real"), os.path.join(home, "link"))
+    got = shim.extra_mounts(["run", os.path.join(home, "link", "s.py")],
+                            cwd=os.path.join(home, "proj"), home=home)
+    assert got == [f"{home}/real:{home}/link:ro"]
 
 
 HOME = "/Users/alice"
 CWD = "/Users/alice/proj"
 
 
-def _cmd(args, runtime="podman", isatty=False, env=None, mounts=()):
-    return shim.build_command(args, runtime=runtime, cwd=CWD, home=HOME,
-                              env=env or {}, isatty=isatty, image="ghcr.io/ga-fdp/fdp:1.28.0",
+def _cmd(args, runtime="podman", tty=False, env=None, mounts=(), cwd=CWD):
+    return shim.build_command(args, runtime=runtime, cwd=cwd, home=HOME,
+                              env=env or {}, tty=tty, image="ghcr.io/ga-fdp/fdp:1.28.0",
                               extra=list(mounts))
 
 
 def test_build_command_podman_basic():
     cmd = _cmd(["run", "python", "s.py"])
     assert cmd == [
-        "podman", "run", "--rm", "--platform", "linux/amd64",
+        "podman", "run", "--rm", "-i", "--platform", "linux/amd64",
         "-v", f"{HOME}/.fdp:/home/fdp/.fdp",
         "-v", f"{HOME}/.config/pelican:/home/fdp/.config/pelican",
-        "-v", f"{CWD}:/work", "-w", "/work",
+        "-v", f"{CWD}:{CWD}", "-w", CWD,
         "ghcr.io/ga-fdp/fdp:1.28.0", "run", "python", "s.py",
     ]
 
 
-def test_build_command_tty_adds_it_only_when_interactive():
-    assert "-it" in _cmd(["login"], isatty=True)
-    assert "-it" not in _cmd(["login"], isatty=False)
+def test_build_command_tty_adds_t_only_when_interactive():
+    assert "-t" in _cmd(["login"], tty=True)
+    assert "-it" not in _cmd(["login"], tty=True)
+    assert "-t" not in _cmd(["login"], tty=False)
+    assert "-i" in _cmd(["login"], tty=False)
+    assert "-i" in _cmd(["login"], tty=True)
+
+
+def test_build_command_refuses_root_cwd():
+    with pytest.raises(shim.ShimError):
+        _cmd(["ls", "/"], cwd="/")
 
 
 def test_build_command_forwards_bearer_token_when_set():
@@ -123,18 +171,21 @@ def test_build_command_apple_container_uses_arch_flag():
 
 
 def test_build_command_env_is_a_message_not_a_container():
-    assert shim.build_command(["env"], runtime="podman", cwd=CWD, home=HOME,
-                              env={}, isatty=True, image="i", extra=[]) is None
+    assert _cmd(["env"]) is None
+
+
+def test_build_command_env_guard_sees_through_device_flag():
+    assert _cmd(["-D", "cmod", "env"]) is None
+    assert _cmd(["--device=cmod", "env"]) is None
+    assert _cmd(["run", "env"]) is not None
 
 
 def test_rosetta_warning_silent_when_podman_reports_true():
-    run = lambda cmd: "true\n"
-    assert shim.rosetta_warning("podman", run) is None
+    assert shim.rosetta_warning("podman", lambda cmd: "true\n") is None
 
 
 def test_rosetta_warning_when_podman_reports_false():
-    run = lambda cmd: "false\n"
-    msg = shim.rosetta_warning("podman", run)
+    msg = shim.rosetta_warning("podman", lambda cmd: "false\n")
     assert "QEMU" in msg and "rosetta" in msg.lower()
 
 
@@ -143,3 +194,23 @@ def test_rosetta_warning_silent_for_other_runtimes_and_on_error():
     def boom(cmd):
         raise OSError("no machine")
     assert shim.rosetta_warning("podman", boom) is None
+
+
+def test_rosetta_marker_present_skips_probe(tmp_path):
+    m = tmp_path / "ok"
+    m.write_text("")
+    calls = []
+    def run(cmd):
+        calls.append(cmd)
+        return "false"
+    assert shim.rosetta_warning("podman", run, marker=str(m)) is None
+    assert calls == []
+
+
+def test_rosetta_marker_written_after_true_not_after_false(tmp_path):
+    m = tmp_path / "ok"
+    assert shim.rosetta_warning("podman", lambda c: "true", marker=str(m)) is None
+    assert m.exists()
+    m2 = tmp_path / "bad"
+    assert shim.rosetta_warning("podman", lambda c: "false", marker=str(m2)) is not None
+    assert not m2.exists()

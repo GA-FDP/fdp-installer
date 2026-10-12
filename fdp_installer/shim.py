@@ -13,7 +13,6 @@ import sys
 IMAGE = os.environ.get("FDP_IMAGE", "__FDP_IMAGE__")
 RUNTIMES = ("podman", "docker", "container")
 CONTAINER_HOME = "/home/fdp"
-WORKDIR = "/work"
 
 INSTALL_HINT = """no container runtime found on PATH.
 
@@ -44,25 +43,33 @@ def find_runtime(env, which=shutil.which) -> str:
 
 
 def extra_mounts(args, cwd, home=None):
-    """Read-only mounts for paths named on the command line outside cwd.
+    """Read-only mounts so absolute paths named on the command line resolve
+    inside the container.
 
-    Only arguments that exist on disk count as paths. The parent directory
-    of each is mounted at its own absolute path so the argument text is valid
-    inside the container unchanged. $HOME itself and / are never mounted.
+    Only absolute arguments that exist on disk and live under $HOME (not $HOME
+    itself) or /Volumes qualify. The current directory is already mounted, and
+    anything else (/tmp, /usr, /opt) would shadow the container's own
+    filesystem, so it passes through untouched. The parent directory is
+    mounted at the path as written, from its resolved location, so the
+    argument text stays valid inside the container even through a symlink.
     """
     home = os.path.realpath(home or os.path.expanduser("~"))
     cwd = os.path.realpath(cwd)
     mounts = []
     for arg in args:
-        if not os.path.exists(arg):
+        if not os.path.isabs(arg) or not os.path.exists(arg):
             continue
         real = os.path.realpath(arg)
         if real == cwd or real.startswith(cwd + os.sep):
             continue
-        parent = real if os.path.isdir(real) else os.path.dirname(real)
-        if parent in ("/", home):
+        written = os.path.normpath(arg)
+        if os.path.isdir(real):
+            source, target = real, written
+        else:
+            source, target = os.path.dirname(real), os.path.dirname(written)
+        if not (source.startswith(home + os.sep) or source.startswith("/Volumes/")):
             continue
-        spec = f"{parent}:{parent}:ro"
+        spec = f"{source}:{target}:ro"
         if spec not in mounts:
             mounts.append(spec)
     return mounts
@@ -79,20 +86,39 @@ container, and nothing outside it can import toksearch. Run commands with
 and they execute inside the environment with your current directory mounted."""
 
 
-def build_command(args, *, runtime, cwd, home, env, isatty, image, extra):
-    """The runtime argv for `fdp <args>`, or None when no container should run."""
-    if args[:1] == ["env"]:
+def _subcommand(args):
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-D", "--device"):
+            i += 2
+            continue
+        if a.startswith("--device="):
+            i += 1
+            continue
+        return a
+    return None
+
+
+def build_command(args, *, runtime, cwd, home, env, tty, image, extra):
+    """The runtime argv for `fdp <args>`, or None when no container should run.
+
+    tty is True only when the caller has checked both stdin and stdout are TTYs.
+    """
+    if _subcommand(args) == "env":
         return None
-    cmd = [runtime, "run", "--rm"]
+    if cwd == "/":
+        raise ShimError("refusing to run from /: cd into a project directory first")
+    cmd = [runtime, "run", "--rm", "-i"]
     if runtime == "container":
         cmd += ["--arch", "amd64"]
     else:
         cmd += ["--platform", "linux/amd64"]
-    if isatty:
-        cmd.append("-it")
+    if tty:
+        cmd.append("-t")
     cmd += ["-v", f"{home}/.fdp:{CONTAINER_HOME}/.fdp",
             "-v", f"{home}/.config/pelican:{CONTAINER_HOME}/.config/pelican",
-            "-v", f"{cwd}:{WORKDIR}", "-w", WORKDIR]
+            "-v", f"{cwd}:{cwd}", "-w", cwd]
     for spec in extra:
         cmd += ["-v", spec]
     for name in FORWARDED_ENV:
@@ -112,12 +138,17 @@ the machine with Rosetta on:
 
 
 def _run_capture(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=True).stdout
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=True).stdout
 
 
-def rosetta_warning(runtime, run=_run_capture):
-    """A warning string when a podman machine will emulate rather than translate."""
+def rosetta_warning(runtime, run=_run_capture, marker=None):
+    """A warning string when a podman machine will emulate rather than translate.
+
+    A marker file records a good verdict so the probe runs once, not per command.
+    """
     if runtime != "podman":
+        return None
+    if marker and os.path.exists(marker):
         return None
     try:
         out = run(["podman", "machine", "inspect", "--format", "{{.Rosetta}}"])
@@ -125,4 +156,9 @@ def rosetta_warning(runtime, run=_run_capture):
         return None
     if out.strip().lower() == "false":
         return ROSETTA_MESSAGE
+    if marker:
+        try:
+            open(marker, "w").close()
+        except OSError:
+            pass
     return None
