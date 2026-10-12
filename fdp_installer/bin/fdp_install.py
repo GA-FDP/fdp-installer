@@ -8,6 +8,11 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import stat
+
+from fdp_installer import channel, shim as _shim_module
+
+IMAGE_REPO = "ghcr.io/ga-fdp/fdp"
 
 
 _LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint'
@@ -153,6 +158,15 @@ def install_fdp(target_dir, install_skills_flag=False,
         os.chdir(original_dir)
 
 
+def _add_flavor_args(parser):
+    parser.add_argument("--latest", action="store_true",
+                        help="Use the rolling fdp-core-latest metapackage")
+    parser.add_argument("--with-labeler", action="store_true",
+                        help="Add ga-dfl-labeler (has a glibc <2.35 constraint)")
+    parser.add_argument("--core-version", default=None,
+                        help="Pin an exact fdp-core version instead of the newest")
+
+
 def _add_install_args(parser):
     parser.add_argument(
         "--directory", "-d",
@@ -163,12 +177,48 @@ def _add_install_args(parser):
         "--install-skills", action="store_true",
         help="Also install Claude Code skills to ~/.claude/skills/"
     )
-    parser.add_argument("--latest", action="store_true",
-                        help="Use the rolling fdp-core-latest metapackage")
-    parser.add_argument("--with-labeler", action="store_true",
-                        help="Add ga-dfl-labeler (has a glibc <2.35 constraint)")
-    parser.add_argument("--core-version", default=None,
-                        help="Pin an exact fdp-core version instead of the newest")
+    parser.add_argument("--container", action="store_true",
+                        help="Install the container-backed fdp shim instead of a "
+                             "pixi environment (the default on macOS)")
+    _add_flavor_args(parser)
+
+
+def install_container_mode(target_dir, *, core_version=None, runtime=None,
+                           run=None, latest=None):
+    """macOS path: write the shim to <target_dir>/bin/fdp and pull the image.
+
+    `run` executes a command list (default: run_command, which exits on
+    failure); `latest` resolves the newest blessed fdp-core (default: the
+    channel).
+    """
+    target_dir = Path(target_dir)
+    run = run or run_command
+    latest = latest or channel.latest_core_version
+    version = core_version or latest()
+    image = f"{IMAGE_REPO}:{version}"
+
+    if runtime is None:
+        runtime = _shim_module.find_runtime(os.environ)
+
+    bin_dir = target_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    source = Path(_shim_module.__file__).read_text(encoding="utf-8")
+    assert "__FDP_IMAGE__" in source
+    shim_path = bin_dir / "fdp"
+    shim_path.write_text(source.replace("__FDP_IMAGE__", image), encoding="utf-8")
+    shim_path.chmod(shim_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    print(f"Pulling {image} with {runtime} ...")
+    run([runtime, "pull", "--platform", "linux/amd64", image])
+
+    print(
+        f"\nFDP is installed as a container-backed command.\n"
+        f"Add it to your PATH:\n\n"
+        f"  export PATH=\"{bin_dir}:$PATH\"\n\n"
+        f"Then `fdp login`, and `fdp run python script.py` runs inside\n"
+        f"{image} with your current directory mounted. `fdp shell` opens a\n"
+        f"shell inside the environment."
+    )
 
 
 def main(argv=None):
@@ -177,24 +227,40 @@ def main(argv=None):
         parser = argparse.ArgumentParser(
             prog="fdp-install render",
             description="Print the pixi.toml fdp-install would write")
-        parser.add_argument("--latest", action="store_true")
-        parser.add_argument("--with-labeler", action="store_true")
-        parser.add_argument("--core-version", default=None)
+        _add_flavor_args(parser)
         args = parser.parse_args(argv[1:])
+        if args.latest and args.core_version:
+            parser.error("--latest and --core-version are mutually exclusive")
         sys.stdout.write(render_pixi_toml(
             latest=args.latest, with_labeler=args.with_labeler,
             core_version=args.core_version))
         return
 
     parser = argparse.ArgumentParser(
-        description="FDP Installer - Bootstrap script for Fusion Data Platform"
+        description="FDP Installer - Bootstrap script for Fusion Data Platform",
+        epilog="Subcommand: `fdp-install render [--core-version X]` prints the "
+               "pixi.toml an install would write.",
     )
     _add_install_args(parser)
     args = parser.parse_args(argv)
+    if args.latest and args.core_version:
+        parser.error("--latest and --core-version are mutually exclusive")
 
-    check_pixi_installed()
+    container = args.container or sys.platform == "darwin"
     target_dir = Path(args.directory).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if container:
+        if args.latest or args.with_labeler:
+            parser.error("--latest and --with-labeler do not apply to the container image")
+        try:
+            install_container_mode(target_dir, core_version=args.core_version)
+        except (RuntimeError, _shim_module.ShimError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(2)
+        return
+
+    check_pixi_installed()
     install_fdp(
         target_dir,
         install_skills_flag=args.install_skills,
