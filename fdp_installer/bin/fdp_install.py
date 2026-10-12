@@ -198,8 +198,8 @@ def install_container_mode(target_dir, *, core_version=None, runtime=None,
                            run=None, latest=None, has_image=None):
     """macOS path: write the shim to <target_dir>/bin/fdp and pull the image.
 
-    `run` executes a command list (default: run_command, which exits on
-    failure); `latest` resolves the newest blessed fdp-core (default: the
+    `run` executes a command list (default: `_pull`, which raises
+    RuntimeError on failure); `latest` resolves the newest blessed fdp-core (default: the
     channel).
     """
     target_dir = Path(target_dir)
