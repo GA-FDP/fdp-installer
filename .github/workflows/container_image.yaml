@@ -10,6 +10,10 @@ on:
         description: "Push to GHCR (false = build and test only)"
         type: boolean
         default: true
+      force:
+        description: "Overwrite an existing version tag on GHCR"
+        type: boolean
+        default: false
   repository_dispatch:
     types: [fdp-core-released]
   pull_request:
@@ -22,6 +26,10 @@ on:
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: container-image
+  cancel-in-progress: false
 
 jobs:
   image:
@@ -53,6 +61,7 @@ jobs:
             echo "::error::no fdp-core version given (dispatch input or client_payload.version)"
             exit 1
           fi
+          echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION '$VERSION' is not x.y.z"; exit 1; }
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Building $IMAGE:$VERSION"
 
@@ -68,28 +77,37 @@ jobs:
         run: |
           docker run --rm "$IMAGE:$VERSION" --help | grep -qE "\brun\b"
           docker run --rm "$IMAGE:$VERSION" device list
-          docker run --rm --user 1000 "$IMAGE:$VERSION" shell -c 'test -w /work && echo "/work writable"'
+          docker run --rm -v "$PWD/container":/work -w /work "$IMAGE:$VERSION" shell -c 'test -r live_check.py && echo "bind mount readable"'
 
       - name: Live fetch over Pelican
-        # Not `if:`-gated on the secret: a missing token must be visible, not a
-        # silent skip. Forks without the secret get a clear "skipped" line.
+        # Not `if:`-gated on the secret: a missing token must be visible. Only a
+        # pull_request run (fork PRs have no secrets) may skip.
         run: |
           if [ -z "$BEARER_TOKEN" ]; then
-            echo "::warning::BEARER_TOKEN is empty; live fetch skipped"
-            exit 0
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "::warning::BEARER_TOKEN is empty (fork PR?); live fetch skipped"; exit 0
+            fi
+            echo "::error::BEARER_TOKEN secret is empty; refusing to publish an untested image"; exit 1
           fi
-          docker run --rm -e BEARER_TOKEN -v "$PWD/container":/work -w /work \
-            "$IMAGE:$VERSION" run python live_check.py
+          docker run --rm -e BEARER_TOKEN -v "$PWD/container":/work -w /work "$IMAGE:$VERSION" run python live_check.py
 
       - name: Log in to GHCR
         if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Push version tag and latest
+      - name: Push version tag
         if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
         run: |
+          if docker manifest inspect "$IMAGE:$VERSION" >/dev/null 2>&1 && [ "${{ github.event.inputs.force }}" != "true" ]; then
+            echo "::error::$IMAGE:$VERSION already exists; re-run with force=true to overwrite"; exit 1
+          fi
           docker push "$IMAGE:$VERSION"
+          echo "Pushed $IMAGE:$VERSION"
+          echo "::notice::First publish of a package name is PRIVATE on GHCR. Set visibility to public once in the org's package settings, then re-run the anonymous-pull check."
+
+      - name: Move latest (blessed releases only)
+        if: github.event_name == 'repository_dispatch'
+        run: |
           docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
           docker push "$IMAGE:latest"
-          echo "Pushed $IMAGE:$VERSION and :latest"
-          echo "::notice::First publish of a package name is PRIVATE on GHCR. Set visibility to public once in the org's package settings, then re-run the anonymous-pull check."
+          echo "Pushed $IMAGE:latest"
