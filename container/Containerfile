@@ -12,8 +12,8 @@ WORKDIR /app
 COPY pixi.toml /app/pixi.toml
 RUN pixi install \
  && pixi shell-hook -s bash > /app/activate.sh \
- && rm -rf /root/.cache/rattler /app/.pixi/envs/default/pkgs \
- && find /app/.pixi/envs/default -name '__pycache__' -type d -prune -exec rm -rf {} + \
+ && rm -rf /root/.cache/rattler \
+ && { /app/.pixi/envs/default/bin/python -m compileall -q -j0 /app/.pixi/envs/default/lib/python3.11 || true; } \
  && rm -rf /app/.pixi/envs/default/share/doc /app/.pixi/envs/default/share/man
 COPY selfcheck.sh /app/selfcheck.sh
 RUN bash /app/selfcheck.sh
@@ -21,7 +21,7 @@ RUN bash /app/selfcheck.sh
 # Stage 2: glibc, certificates, a shell, the environment, nothing else.
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates tzdata \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata tini \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --uid 1000 fdp \
  && mkdir -p /work && chown fdp:fdp /work
@@ -31,5 +31,5 @@ RUN chmod 755 /usr/local/bin/fdp-entrypoint
 USER fdp
 WORKDIR /work
 ENV HOME=/home/fdp
-ENTRYPOINT ["fdp-entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "--", "fdp-entrypoint"]
 CMD ["--help"]
