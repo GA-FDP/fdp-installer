@@ -44,8 +44,8 @@ def test_install_container_mode_skips_pull_when_image_present(tmp_path):
 
 def test_install_container_mode_failed_pull_leaves_no_shim(tmp_path):
     def boom(cmd):
-        raise SystemExit(1)
-    with pytest.raises(SystemExit):
+        raise RuntimeError("pull failed")
+    with pytest.raises(RuntimeError):
         fdp_install.install_container_mode(
             tmp_path, core_version="1.28.0", runtime="podman",
             run=boom, has_image=lambda: False)
@@ -53,8 +53,9 @@ def test_install_container_mode_failed_pull_leaves_no_shim(tmp_path):
 
 
 def test_install_container_mode_refuses_latest_flag(tmp_path):
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as e:
         fdp_install.main(["--container", "--latest", "-d", str(tmp_path)])
+    assert e.value.code == 2
 
 
 def test_main_container_flag_skips_pixi(tmp_path, monkeypatch):
@@ -85,3 +86,36 @@ def test_top_level_help_mentions_render(capsys):
     with pytest.raises(SystemExit):
         fdp_install.main(["--help"])
     assert "render" in capsys.readouterr().out
+
+
+def test_main_container_error_exits_2(tmp_path, monkeypatch, capsys):
+    def boom(d, **kw):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(fdp_install, "install_container_mode", boom)
+    with pytest.raises(SystemExit) as e:
+        fdp_install.main(["--container", "-d", str(tmp_path), "--core-version", "1.0.0"])
+    assert e.value.code == 2
+    assert "Error: boom" in capsys.readouterr().err
+
+
+def test_container_mode_refuses_install_skills(tmp_path, capsys):
+    with pytest.raises(SystemExit) as e:
+        fdp_install.main(["--container", "--install-skills", "-d", str(tmp_path)])
+    assert e.value.code == 2
+    assert "--install-skills does not apply" in capsys.readouterr().err
+
+
+def test_default_has_image_uses_image_inspect(tmp_path, monkeypatch):
+    seen = []
+
+    class R:
+        returncode = 0
+
+    monkeypatch.setattr(fdp_install.subprocess, "run",
+                        lambda cmd, **kw: seen.append(cmd) or R())
+    calls = []
+    fdp_install.install_container_mode(
+        tmp_path, core_version="1.0.0", runtime="podman",
+        run=lambda cmd: calls.append(cmd))
+    assert seen == [["podman", "image", "inspect", "ghcr.io/ga-fdp/fdp:1.0.0"]]
+    assert calls == []

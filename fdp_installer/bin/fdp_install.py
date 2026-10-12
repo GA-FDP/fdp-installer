@@ -183,6 +183,17 @@ def _add_install_args(parser):
     _add_flavor_args(parser)
 
 
+def _pull(cmd):
+    """Run an image pull; failures raise RuntimeError with a hint."""
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{cmd[0]} pull failed (exit {result.returncode}):\n"
+            f"{result.stderr.strip()}\n\n"
+            "If the container machine is not running: "
+            "`podman machine start` or `colima start`.")
+
+
 def install_container_mode(target_dir, *, core_version=None, runtime=None,
                            run=None, latest=None, has_image=None):
     """macOS path: write the shim to <target_dir>/bin/fdp and pull the image.
@@ -192,7 +203,7 @@ def install_container_mode(target_dir, *, core_version=None, runtime=None,
     channel).
     """
     target_dir = Path(target_dir)
-    run = run or run_command
+    run = run or _pull
     latest = latest or channel.latest_core_version
     version = core_version or latest()
     image = f"{IMAGE_REPO}:{version}"
@@ -213,7 +224,8 @@ def install_container_mode(target_dir, *, core_version=None, runtime=None,
     bin_dir = target_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     source = Path(_shim_module.__file__).read_text(encoding="utf-8")
-    assert "__FDP_IMAGE__" in source
+    if "__FDP_IMAGE__" not in source:
+        raise RuntimeError("shim template has no __FDP_IMAGE__ placeholder")
     shim_path = bin_dir / "fdp"
     shim_path.write_text(source.replace("__FDP_IMAGE__", image), encoding="utf-8")
     shim_path.chmod(shim_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -258,6 +270,9 @@ def main(argv=None):
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if container:
+        if args.install_skills:
+            parser.error("--install-skills does not apply to the container image; "
+                         "run `fdp skills install` through the installed fdp")
         if args.latest or args.with_labeler:
             parser.error("--latest and --with-labeler do not apply to the container image")
         try:
