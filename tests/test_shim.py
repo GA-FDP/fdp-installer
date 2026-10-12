@@ -262,9 +262,9 @@ def test_main_creates_the_two_state_dirs(tmp_path):
     assert (tmp_path / ".config" / "pelican").is_dir()
 
 
-def test_main_env_prints_message_and_exits_zero(tmp_path):
+def test_main_env_prints_message_and_exits_nonzero(tmp_path):
     code, rec = _main(["env"], tmp_path)
-    assert code == 0
+    assert code == 1
     assert rec.argv is None
     assert any("fdp run" in m for m in rec.err)
 
@@ -301,3 +301,11 @@ def test_main_tty_adds_t_flag(tmp_path):
     assert "-t" in rec.argv and "-i" in rec.argv
     _, rec = _main(["login"], tmp_path, tty=False)
     assert "-t" not in rec.argv and "-i" in rec.argv
+
+
+def test_main_makedirs_failure_is_exit_2(tmp_path):
+    os.symlink("nowhere", tmp_path / ".config")
+    code, rec = _main(["ls", "/"], tmp_path)
+    assert code == 2
+    assert rec.argv is None
+    assert any("cannot create" in m for m in rec.err)

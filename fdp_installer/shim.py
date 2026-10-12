@@ -103,7 +103,7 @@ def _subcommand(args):
 def build_command(args, *, runtime, cwd, home, env, tty, image, extra):
     """The runtime argv for `fdp <args>`, or None when no container should run.
 
-    tty is True only when the caller has checked both stdin and stdout are TTYs.
+    tty is True only when the caller has checked stdin, stdout and stderr are all TTYs.
     """
     if _subcommand(args) == "env":
         return None
@@ -173,9 +173,10 @@ def main(argv=None, *, env=None, cwd=None, tty=None, which=shutil.which,
     argv = sys.argv[1:] if argv is None else list(argv)
     env = os.environ if env is None else env
     cwd = os.getcwd() if cwd is None else cwd
-    tty = (lambda: sys.stdin.isatty() and sys.stdout.isatty()) if tty is None else tty
+    tty = (lambda: sys.stdin.isatty() and sys.stdout.isatty()
+                       and sys.stderr.isatty()) if tty is None else tty
     stderr = (lambda m: print(m, file=sys.stderr)) if stderr is None else stderr
-    home = env.get("HOME") or os.path.expanduser("~")
+    home = os.path.realpath(env.get("HOME") or os.path.expanduser("~"))
 
     try:
         runtime = find_runtime(env, which)
@@ -185,7 +186,11 @@ def main(argv=None, *, env=None, cwd=None, tty=None, which=shutil.which,
 
     fdp_dir = os.path.join(home, ".fdp")
     for d in (fdp_dir, os.path.join(home, ".config", "pelican")):
-        os.makedirs(d, exist_ok=True)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as e:
+            stderr(f"fdp: cannot create {d}: {e}")
+            raise SystemExit(2)
 
     warning = rosetta_warning(runtime, run, marker=os.path.join(fdp_dir, "rosetta-checked"))
     if warning:
@@ -200,7 +205,7 @@ def main(argv=None, *, env=None, cwd=None, tty=None, which=shutil.which,
         raise SystemExit(2)
     if cmd is None:
         stderr(ENV_MESSAGE)
-        raise SystemExit(0)
+        raise SystemExit(1)
     execvp(cmd[0], cmd)
 
 
