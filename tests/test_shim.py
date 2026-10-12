@@ -214,3 +214,86 @@ def test_rosetta_marker_written_after_true_not_after_false(tmp_path):
     m2 = tmp_path / "bad"
     assert shim.rosetta_warning("podman", lambda c: "false", marker=str(m2)) is not None
     assert not m2.exists()
+
+
+class _Recorder:
+    def __init__(self):
+        self.argv = None
+        self.err = []
+
+    def execvp(self, prog, argv):
+        self.argv = argv
+        raise SystemExit(0)
+
+
+def _main(args, tmp_path, env=None, tty=False, which_avail=("podman",), rosetta="true"):
+    rec = _Recorder()
+    env = {"HOME": str(tmp_path), **(env or {})}
+    cwd = tmp_path / "proj"
+    cwd.mkdir(exist_ok=True)
+    with pytest.raises(SystemExit) as e:
+        shim.main(args, env=env, cwd=str(cwd), tty=lambda: tty,
+                  which=_which_factory(set(which_avail)), execvp=rec.execvp,
+                  run=lambda cmd: rosetta, stderr=rec.err.append)
+    return e.value.code, rec
+
+
+def test_main_execs_the_runtime(tmp_path):
+    code, rec = _main(["ls", "/"], tmp_path)
+    assert code == 0
+    assert rec.argv[0] == "podman" and rec.argv[-2:] == ["ls", "/"]
+    cwd = str(tmp_path / "proj")
+    assert rec.argv[rec.argv.index("-w") + 1] == cwd
+    assert f"{cwd}:{cwd}" in rec.argv
+
+
+def test_main_rosetta_marker_is_written_under_fdp_dir(tmp_path):
+    _main(["ls", "/"], tmp_path)
+    assert (tmp_path / ".fdp" / "rosetta-checked").exists()
+
+
+def test_main_creates_the_two_state_dirs(tmp_path):
+    _main(["login"], tmp_path)
+    assert (tmp_path / ".fdp").is_dir()
+    assert (tmp_path / ".config" / "pelican").is_dir()
+
+
+def test_main_env_prints_message_and_exits_zero(tmp_path):
+    code, rec = _main(["env"], tmp_path)
+    assert code == 0
+    assert rec.argv is None
+    assert any("fdp run" in m for m in rec.err)
+
+
+def test_main_no_runtime_is_exit_2_with_hint(tmp_path):
+    code, rec = _main(["ls", "/"], tmp_path, which_avail=())
+    assert code == 2
+    assert any("brew install podman" in m for m in rec.err)
+
+
+def test_main_warns_on_rosetta_off(tmp_path):
+    _, rec = _main(["ls", "/"], tmp_path, rosetta="false")
+    assert any("QEMU" in m for m in rec.err)
+
+
+def test_main_uses_baked_image(tmp_path):
+    _, rec = _main(["ls", "/"], tmp_path)
+    assert shim.IMAGE in rec.argv
+
+
+def test_main_refuses_root_cwd(tmp_path):
+    rec = _Recorder()
+    with pytest.raises(SystemExit) as e:
+        shim.main(["ls", "/"], env={"HOME": str(tmp_path)}, cwd="/", tty=lambda: False,
+                  which=_which_factory({"podman"}), execvp=rec.execvp,
+                  run=lambda cmd: "true", stderr=rec.err.append)
+    assert e.value.code == 2
+    assert rec.argv is None
+    assert any("refusing" in m for m in rec.err)
+
+
+def test_main_tty_adds_t_flag(tmp_path):
+    _, rec = _main(["login"], tmp_path, tty=True)
+    assert "-t" in rec.argv and "-i" in rec.argv
+    _, rec = _main(["login"], tmp_path, tty=False)
+    assert "-t" not in rec.argv and "-i" in rec.argv

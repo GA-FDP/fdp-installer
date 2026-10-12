@@ -162,3 +162,43 @@ def rosetta_warning(runtime, run=_run_capture, marker=None):
         except OSError:
             pass
     return None
+
+
+def main(argv=None, *, env=None, cwd=None, tty=None, which=shutil.which,
+         execvp=os.execvp, run=_run_capture, stderr=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    env = os.environ if env is None else env
+    cwd = os.getcwd() if cwd is None else cwd
+    tty = (lambda: sys.stdin.isatty() and sys.stdout.isatty()) if tty is None else tty
+    stderr = (lambda m: print(m, file=sys.stderr)) if stderr is None else stderr
+    home = env.get("HOME") or os.path.expanduser("~")
+
+    try:
+        runtime = find_runtime(env, which)
+    except ShimError as e:
+        stderr(f"fdp: {e}")
+        raise SystemExit(2)
+
+    fdp_dir = os.path.join(home, ".fdp")
+    for d in (fdp_dir, os.path.join(home, ".config", "pelican")):
+        os.makedirs(d, exist_ok=True)
+
+    warning = rosetta_warning(runtime, run, marker=os.path.join(fdp_dir, "rosetta-checked"))
+    if warning:
+        stderr(warning)
+
+    try:
+        cmd = build_command(argv or ["--help"], runtime=runtime, cwd=cwd, home=home,
+                            env=env, tty=tty(), image=IMAGE,
+                            extra=extra_mounts(argv, cwd=cwd, home=home))
+    except ShimError as e:
+        stderr(f"fdp: {e}")
+        raise SystemExit(2)
+    if cmd is None:
+        stderr(ENV_MESSAGE)
+        raise SystemExit(0)
+    execvp(cmd[0], cmd)
+
+
+if __name__ == "__main__":
+    main()
