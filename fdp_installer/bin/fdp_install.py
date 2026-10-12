@@ -13,9 +13,13 @@ from pathlib import Path
 _LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint'
 
 
-def render_pixi_toml(latest: bool = False, with_labeler: bool = False) -> str:
+def render_pixi_toml(latest: bool = False, with_labeler: bool = False,
+                     core_version: "str | None" = None) -> str:
+    if latest and core_version:
+        raise ValueError("--latest and --core-version are mutually exclusive")
     core = "fdp-core-latest" if latest else "fdp-core"
-    deps = [f'{core} = "*"']
+    spec = f"=={core_version}" if core_version else "*"
+    deps = [f'{core} = "{spec}"']
     if with_labeler:
         deps.append(_LABELER_DEP)
     envs = ["dev"]
