@@ -12,6 +12,12 @@ on:
         default: true
   repository_dispatch:
     types: [fdp-core-released]
+  pull_request:
+    paths:
+      - container/**
+      - fdp_installer/**
+      - pyproject.toml
+      - .github/workflows/container_image.yaml
 
 permissions:
   contents: read
@@ -30,21 +36,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refuse to build without a version
-        run: |
-          if [ -z "$VERSION" ]; then
-            echo "::error::no fdp-core version given (dispatch input or client_payload.version)"
-            exit 1
-          fi
-          echo "Building $IMAGE:$VERSION"
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Install the installer
+        run: python -m pip install -q .
+
+      - name: Resolve the fdp-core version to bake
+        run: |
+          if [ -z "$VERSION" ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            VERSION="$(python -c 'from fdp_installer.channel import latest_core_version; print(latest_core_version())')"
+            echo "pull_request: using the current bless, fdp-core $VERSION"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::no fdp-core version given (dispatch input or client_payload.version)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building $IMAGE:$VERSION"
+
       - name: Render the installer's pixi.toml for this bless
         run: |
-          python -m pip install -q .
           fdp-install render --core-version "$VERSION" > container/pixi.toml
           cat container/pixi.toml
 
