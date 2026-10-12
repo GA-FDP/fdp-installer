@@ -1,0 +1,113 @@
+name: Container image
+
+on:
+  workflow_dispatch:
+    inputs:
+      fdp_core_version:
+        description: "Exact fdp-core version to bake (must already be on ga-fdp main)"
+        required: true
+      push:
+        description: "Push to GHCR (false = build and test only)"
+        type: boolean
+        default: true
+      force:
+        description: "Overwrite an existing version tag on GHCR"
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [fdp-core-released]
+  pull_request:
+    paths:
+      - container/**
+      - fdp_installer/**
+      - pyproject.toml
+      - .github/workflows/container_image.yaml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-image
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.inputs.fdp_core_version || github.event.client_payload.version }}
+      IMAGE: ghcr.io/ga-fdp/fdp
+      # Named here so a later step can test it; `secrets` is not allowed in `if:`.
+      BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the installer
+        run: python -m pip install -q .
+
+      - name: Resolve the fdp-core version to bake
+        run: |
+          if [ -z "$VERSION" ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            VERSION="$(python -c 'from fdp_installer.channel import latest_core_version; print(latest_core_version())')"
+            echo "pull_request: using the current bless, fdp-core $VERSION"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::no fdp-core version given (dispatch input or client_payload.version)"
+            exit 1
+          fi
+          echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION '$VERSION' is not x.y.z"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building $IMAGE:$VERSION"
+
+      - name: Render the installer's pixi.toml for this bless
+        run: |
+          fdp-install render --core-version "$VERSION" > container/pixi.toml
+          cat container/pixi.toml
+
+      - name: Build (the self-check runs inside the build)
+        run: docker build -f container/Containerfile -t "$IMAGE:$VERSION" container/
+
+      - name: Smoke test
+        run: |
+          docker run --rm "$IMAGE:$VERSION" --help | grep -qE "\brun\b"
+          docker run --rm "$IMAGE:$VERSION" device list
+          docker run --rm -v "$PWD/container":/work -w /work "$IMAGE:$VERSION" shell -c 'test -r live_check.py && echo "bind mount readable"'
+
+      - name: Live fetch over Pelican
+        # Not `if:`-gated on the secret: a missing token must be visible. Only a
+        # pull_request run (fork PRs have no secrets) may skip.
+        run: |
+          if [ -z "$BEARER_TOKEN" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "::warning::BEARER_TOKEN is empty (fork PR?); live fetch skipped"; exit 0
+            fi
+            echo "::error::BEARER_TOKEN secret is empty; refusing to publish an untested image"; exit 1
+          fi
+          docker run --rm -e BEARER_TOKEN -v "$PWD/container":/work -w /work "$IMAGE:$VERSION" run python live_check.py
+
+      - name: Log in to GHCR
+        if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push version tag
+        if: github.event_name == 'repository_dispatch' || github.event.inputs.push == 'true'
+        run: |
+          if docker manifest inspect "$IMAGE:$VERSION" >/dev/null 2>&1 && [ "${{ github.event.inputs.force }}" != "true" ]; then
+            echo "::error::$IMAGE:$VERSION already exists; re-run with force=true to overwrite"; exit 1
+          fi
+          docker push "$IMAGE:$VERSION"
+          echo "Pushed $IMAGE:$VERSION"
+          echo "::notice::First publish of a package name is PRIVATE on GHCR. Set visibility to public once in the org's package settings, then re-run the anonymous-pull check."
+
+      - name: Move latest (blessed releases only)
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+          echo "Pushed $IMAGE:latest"

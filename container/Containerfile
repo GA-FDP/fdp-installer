@@ -1,0 +1,35 @@
+# FDP environment image. Build context is fdp_installer/container/ with a
+# pixi.toml rendered by the installer (Task 3's `render` subcommand):
+#
+#   python -m fdp_installer.bin.fdp_install render --core-version 1.29.0 \
+#       > container/pixi.toml
+#   podman build -f container/Containerfile -t ghcr.io/ga-fdp/fdp:1.29.0 container/
+#
+# Stage 1 solves and installs the pinned fdp-core set with pixi and writes an
+# activation script, so the runtime stage needs no pixi at all.
+FROM ghcr.io/prefix-dev/pixi:0.63.2 AS build
+WORKDIR /app
+COPY pixi.toml /app/pixi.toml
+RUN pixi install \
+ && pixi shell-hook -s bash > /app/activate.sh \
+ && rm -rf /root/.cache/rattler \
+ && /app/.pixi/envs/default/bin/python -m compileall -q -j0 -x '/(tests?|testing)/' /app/.pixi/envs/default/lib/python3.11 \
+ && rm -rf /app/.pixi/envs/default/share/doc /app/.pixi/envs/default/share/man
+COPY selfcheck.sh /app/selfcheck.sh
+RUN bash /app/selfcheck.sh
+
+# Stage 2: glibc, certificates, a shell, the environment, nothing else.
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 1000 fdp \
+ && mkdir -p /work && chown fdp:fdp /work
+COPY --from=build /app /app
+COPY entrypoint.sh /usr/local/bin/fdp-entrypoint
+RUN chmod 755 /usr/local/bin/fdp-entrypoint
+USER fdp
+WORKDIR /work
+ENV HOME=/home/fdp
+ENTRYPOINT ["/usr/bin/tini", "--", "fdp-entrypoint"]
+CMD ["--help"]

@@ -88,3 +88,28 @@ def test_no_activation_default_device():
     # The installer does not pick a device for the user; fdp-core is
     # multi-device and the fdp CLI requires an explicit choice.
     assert "FDP_DEFAULT_DEVICE" not in render_pixi_toml()
+
+
+def test_core_version_pins_exactly():
+    text = render_pixi_toml(core_version="1.28.0")
+    assert 'fdp-core = "==1.28.0"' in text
+    assert 'fdp-core = "*"' not in text
+
+
+def test_core_version_with_latest_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        render_pixi_toml(latest=True, core_version="1.28.0")
+
+
+def test_core_version_parses_as_toml():
+    doc = tomllib.loads(render_pixi_toml(core_version="1.28.0"))
+    assert doc["dependencies"]["fdp-core"] == "==1.28.0"
+
+
+def test_render_subcommand_prints_pinned_toml(capsys):
+    fdp_install.main(["render", "--core-version", "1.28.0"])
+    out = capsys.readouterr().out
+    doc = tomllib.loads(out)
+    assert doc["dependencies"]["fdp-core"] == "==1.28.0"

@@ -41,6 +41,18 @@ cd /path/to/project
 pixi shell
 ```
 
+## macOS (Apple Silicon)
+
+On a Mac `fdp-install` installs a container-backed `fdp` command instead of a
+pixi environment. Install Podman (`brew install podman && podman machine init
+&& podman machine start`) or Colima first, then:
+
+    fdp-install -d ~/fdp
+    export PATH="$HOME/fdp/bin:$PATH"
+    fdp login
+
+Full guide: https://ga-fdp.github.io/macos/
+
 ## Developing the installer itself
 
 The distribution mechanism for the installer is as a conda package. To build the package,
