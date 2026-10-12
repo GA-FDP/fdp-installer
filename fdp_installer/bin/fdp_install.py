@@ -184,7 +184,7 @@ def _add_install_args(parser):
 
 
 def install_container_mode(target_dir, *, core_version=None, runtime=None,
-                           run=None, latest=None):
+                           run=None, latest=None, has_image=None):
     """macOS path: write the shim to <target_dir>/bin/fdp and pull the image.
 
     `run` executes a command list (default: run_command, which exits on
@@ -200,6 +200,16 @@ def install_container_mode(target_dir, *, core_version=None, runtime=None,
     if runtime is None:
         runtime = _shim_module.find_runtime(os.environ)
 
+    if has_image is None:
+        def has_image():
+            return subprocess.run([runtime, "image", "inspect", image],
+                                  capture_output=True).returncode == 0
+    if has_image():
+        print(f"{image} is already present; skipping pull")
+    else:
+        print(f"Pulling {image} with {runtime} ...")
+        run([runtime, "pull", "--platform", "linux/amd64", image])
+
     bin_dir = target_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     source = Path(_shim_module.__file__).read_text(encoding="utf-8")
@@ -207,9 +217,6 @@ def install_container_mode(target_dir, *, core_version=None, runtime=None,
     shim_path = bin_dir / "fdp"
     shim_path.write_text(source.replace("__FDP_IMAGE__", image), encoding="utf-8")
     shim_path.chmod(shim_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    print(f"Pulling {image} with {runtime} ...")
-    run([runtime, "pull", "--platform", "linux/amd64", image])
 
     print(
         f"\nFDP is installed as a container-backed command.\n"

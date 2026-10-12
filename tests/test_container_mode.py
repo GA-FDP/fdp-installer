@@ -16,7 +16,7 @@ def test_install_container_mode_writes_shim_with_image_baked(tmp_path):
     calls = []
     fdp_install.install_container_mode(
         tmp_path, core_version="1.28.0", runtime="podman",
-        run=lambda cmd: calls.append(cmd))
+        run=lambda cmd: calls.append(cmd), has_image=lambda: False)
     shim = tmp_path / "bin" / "fdp"
     text = shim.read_text()
     assert '"ghcr.io/ga-fdp/fdp:1.28.0"' in text
@@ -29,8 +29,27 @@ def test_install_container_mode_writes_shim_with_image_baked(tmp_path):
 def test_install_container_mode_resolves_version_from_channel(tmp_path):
     fdp_install.install_container_mode(
         tmp_path, core_version=None, runtime="docker",
-        run=lambda cmd: None, latest=lambda: "1.30.0")
+        run=lambda cmd: None, latest=lambda: "1.30.0", has_image=lambda: False)
     assert "fdp:1.30.0" in (tmp_path / "bin" / "fdp").read_text()
+
+
+def test_install_container_mode_skips_pull_when_image_present(tmp_path):
+    calls = []
+    fdp_install.install_container_mode(
+        tmp_path, core_version="1.28.0", runtime="podman",
+        run=lambda cmd: calls.append(cmd), has_image=lambda: True)
+    assert calls == []
+    assert (tmp_path / "bin" / "fdp").exists()
+
+
+def test_install_container_mode_failed_pull_leaves_no_shim(tmp_path):
+    def boom(cmd):
+        raise SystemExit(1)
+    with pytest.raises(SystemExit):
+        fdp_install.install_container_mode(
+            tmp_path, core_version="1.28.0", runtime="podman",
+            run=boom, has_image=lambda: False)
+    assert not (tmp_path / "bin" / "fdp").exists()
 
 
 def test_install_container_mode_refuses_latest_flag(tmp_path):
