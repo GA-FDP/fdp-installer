@@ -51,7 +51,7 @@ def get_config() -> VersioneerConfig:
     cfg = VersioneerConfig()
     cfg.VCS = "git"
     cfg.style = "pep440"
-    cfg.tag_prefix = "release-"
+    cfg.tag_prefix = "staging-"
     cfg.parentdir_prefix = "fdp_installer-"
     cfg.versionfile_source = "fdp_installer/_version.py"
     cfg.verbose = False
