@@ -41,13 +41,24 @@ cd /path/to/project
 pixi shell
 ```
 
-## macOS (Apple Silicon)
+## macOS
 
-On a Mac `fdp-install` installs a container-backed `fdp` command instead of a
-pixi environment. Install Podman (`brew install podman && podman machine init
-&& podman machine start`) or Colima first, then:
+On an Apple Silicon Mac `fdp-install` builds a native pixi environment, exactly
+as on Linux:
 
     fdp-install -d ~/fdp
+    cd ~/fdp && pixi shell
+    fdp login
+
+This needs fdp-core 1.35.0 or newer (the first whose every package has an
+Apple Silicon build); `--with-labeler` is Linux-only.
+
+On an Intel Mac, or with `--container`, it installs a container-backed `fdp`
+command instead: the Linux environment in an image. Install Podman (`brew
+install podman && podman machine init && podman machine start`) or Colima
+first, then:
+
+    fdp-install -d ~/fdp            # add --container on Apple Silicon
     export PATH="$HOME/fdp/bin:$PATH"
     fdp login
 

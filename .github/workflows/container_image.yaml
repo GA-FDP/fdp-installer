@@ -67,7 +67,7 @@ jobs:
 
       - name: Render the installer's pixi.toml for this bless
         run: |
-          fdp-install render --core-version "$VERSION" > container/pixi.toml
+          fdp-install render --platform linux-64 --core-version "$VERSION" > container/pixi.toml
           cat container/pixi.toml
 
       - name: Build (the self-check runs inside the build)

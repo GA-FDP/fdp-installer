@@ -8,6 +8,7 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import platform as _platform
 import stat
 
 from fdp_installer import channel, shim as _shim_module
@@ -17,11 +18,37 @@ IMAGE_REPO = "ghcr.io/ga-fdp/fdp"
 
 _LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint'
 
+#: Platforms with native builds of every fdp-core member.
+NATIVE_PLATFORMS = ("linux-64", "osx-arm64")
+
+#: The first fdp-core whose every member installs on osx-arm64.
+FIRST_OSX_ARM64_CORE = (1, 35, 0)
+
+
+def host_platform(sys_platform=None, machine=None):
+    """The conda subdir of this machine, or None where there is no native build."""
+    sys_platform = sys.platform if sys_platform is None else sys_platform
+    machine = _platform.machine() if machine is None else machine
+    if sys_platform.startswith("linux") and machine in ("x86_64", "AMD64"):
+        return "linux-64"
+    if sys_platform == "darwin" and machine == "arm64":
+        return "osx-arm64"
+    return None
+
+
+def _version_tuple(text):
+    return tuple(int(p) for p in text.split(".")[:3] if p.isdigit())
+
 
 def render_pixi_toml(latest: bool = False, with_labeler: bool = False,
-                     core_version: "str | None" = None) -> str:
+                     core_version: "str | None" = None,
+                     platform: str = "linux-64") -> str:
     if latest and core_version:
         raise ValueError("--latest and --core-version are mutually exclusive")
+    if platform not in NATIVE_PLATFORMS:
+        raise ValueError(f"no native FDP builds for {platform}")
+    if with_labeler and platform != "linux-64":
+        raise ValueError("--with-labeler is Linux-only (ga-dfl-labeler needs glibc)")
     core = "fdp-core-latest" if latest else "fdp-core"
     spec = f"=={core_version}" if core_version else "*"
     deps = [f'{core} = "{spec}"']
@@ -32,7 +59,7 @@ def render_pixi_toml(latest: bool = False, with_labeler: bool = False,
 name = "fdp_dev"
 description = "Fusion Data Platform environment (slim core via fdp-core metapackage)"
 channels = ["conda-forge", "ga-fdp"]
-platforms = ["linux-64"]
+platforms = ["{platform}"]
 
 [dependencies]
 {chr(10).join(deps)}
@@ -77,12 +104,13 @@ def check_pixi_installed():
         sys.exit(1)
 
 
-def write_pixi_toml(latest=False, with_labeler=False, core_version=None):
+def write_pixi_toml(latest=False, with_labeler=False, core_version=None,
+                    platform="linux-64"):
     """Render pixi.toml into the current directory if it doesn't exist."""
     if not Path("pixi.toml").exists():
         Path("pixi.toml").write_text(
             render_pixi_toml(latest=latest, with_labeler=with_labeler,
-                             core_version=core_version),
+                             core_version=core_version, platform=platform),
             encoding="utf-8",
         )
         print("Wrote pixi.toml to current directory")
@@ -125,7 +153,8 @@ def _print_device_selection_note():
 
 
 def install_fdp(target_dir, install_skills_flag=False,
-                latest=False, with_labeler=False, core_version=None):
+                latest=False, with_labeler=False, core_version=None,
+                platform="linux-64"):
     """Install FDP in the specified directory."""
     print(f"Installing FDP in directory: {target_dir}")
 
@@ -136,7 +165,7 @@ def install_fdp(target_dir, install_skills_flag=False,
     try:
         # Ensure pixi.toml is available
         write_pixi_toml(latest=latest, with_labeler=with_labeler,
-                        core_version=core_version)
+                        core_version=core_version, platform=platform)
 
         # Install dependencies using pixi
         run_command(["pixi", "install", "-vv"])
@@ -179,7 +208,8 @@ def _add_install_args(parser):
     )
     parser.add_argument("--container", action="store_true",
                         help="Install the container-backed fdp shim instead of a "
-                             "pixi environment (the default on macOS)")
+                             "pixi environment (the default where there is no "
+                             "native build, such as an Intel Mac)")
     _add_flavor_args(parser)
 
 
@@ -247,12 +277,17 @@ def main(argv=None):
             prog="fdp-install render",
             description="Print the pixi.toml fdp-install would write")
         _add_flavor_args(parser)
+        parser.add_argument("--platform", choices=NATIVE_PLATFORMS,
+                            default=host_platform() or "linux-64",
+                            help="Platform to render for (default: this machine's)")
         args = parser.parse_args(argv[1:])
-        if args.latest and args.core_version:
-            parser.error("--latest and --core-version are mutually exclusive")
-        sys.stdout.write(render_pixi_toml(
-            latest=args.latest, with_labeler=args.with_labeler,
-            core_version=args.core_version))
+        try:
+            text = render_pixi_toml(
+                latest=args.latest, with_labeler=args.with_labeler,
+                core_version=args.core_version, platform=args.platform)
+        except ValueError as e:
+            parser.error(str(e))
+        sys.stdout.write(text)
         return
 
     parser = argparse.ArgumentParser(
@@ -265,7 +300,8 @@ def main(argv=None):
     if args.latest and args.core_version:
         parser.error("--latest and --core-version are mutually exclusive")
 
-    container = args.container or sys.platform == "darwin"
+    native = host_platform()
+    container = args.container or native is None
     target_dir = Path(args.directory).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -282,6 +318,17 @@ def main(argv=None):
             sys.exit(2)
         return
 
+    if native == "osx-arm64":
+        if args.with_labeler:
+            parser.error("--with-labeler is Linux-only (ga-dfl-labeler needs glibc)")
+        if args.core_version and \
+                _version_tuple(args.core_version) < FIRST_OSX_ARM64_CORE:
+            parser.error(
+                f"fdp-core {args.core_version} does not install on Apple Silicon; "
+                f"the first that does is "
+                f"{'.'.join(map(str, FIRST_OSX_ARM64_CORE))}. Use --container "
+                f"for an older one.")
+
     check_pixi_installed()
     install_fdp(
         target_dir,
@@ -289,6 +336,7 @@ def main(argv=None):
         latest=args.latest,
         with_labeler=args.with_labeler,
         core_version=args.core_version,
+        platform=native,
     )
 
 

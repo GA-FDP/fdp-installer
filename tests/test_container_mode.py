@@ -67,12 +67,70 @@ def test_main_container_flag_skips_pixi(tmp_path, monkeypatch):
     assert "1.28.0" in (tmp_path / "called").read_text()
 
 
-def test_main_defaults_to_container_on_darwin(tmp_path, monkeypatch):
+def test_main_defaults_to_container_on_an_intel_mac(tmp_path, monkeypatch):
     monkeypatch.setattr(fdp_install.sys, "platform", "darwin")
+    monkeypatch.setattr(fdp_install._platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(fdp_install, "install_container_mode",
                         lambda d, **kw: (tmp_path / "called").write_text("yes"))
     fdp_install.main(["-d", str(tmp_path), "--core-version", "1.28.0"])
     assert (tmp_path / "called").exists()
+
+
+def _apple_silicon(monkeypatch, tmp_path):
+    monkeypatch.setattr(fdp_install.sys, "platform", "darwin")
+    monkeypatch.setattr(fdp_install._platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(fdp_install, "install_container_mode",
+                        lambda d, **kw: (_ for _ in ()).throw(
+                            AssertionError("container mode on Apple Silicon")))
+    monkeypatch.setattr(fdp_install, "check_pixi_installed", lambda: True)
+    monkeypatch.setattr(fdp_install, "install_fdp",
+                        lambda d, **kw: (tmp_path / "native").write_text(repr(kw)))
+
+
+def test_main_is_native_on_apple_silicon(tmp_path, monkeypatch):
+    _apple_silicon(monkeypatch, tmp_path)
+    fdp_install.main(["-d", str(tmp_path)])
+    assert "'platform': 'osx-arm64'" in (tmp_path / "native").read_text()
+
+
+def test_apple_silicon_refuses_a_core_older_than_its_first(tmp_path, monkeypatch, capsys):
+    _apple_silicon(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit) as e:
+        fdp_install.main(["-d", str(tmp_path), "--core-version", "1.34.0"])
+    assert e.value.code == 2
+    assert "1.35.0" in capsys.readouterr().err
+    assert not (tmp_path / "native").exists()
+
+
+def test_apple_silicon_accepts_the_first_core_that_installs(tmp_path, monkeypatch):
+    _apple_silicon(monkeypatch, tmp_path)
+    fdp_install.main(["-d", str(tmp_path), "--core-version", "1.35.0"])
+    assert "'core_version': '1.35.0'" in (tmp_path / "native").read_text()
+
+
+def test_apple_silicon_refuses_the_labeler(tmp_path, monkeypatch, capsys):
+    _apple_silicon(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit):
+        fdp_install.main(["-d", str(tmp_path), "--with-labeler"])
+    assert "Linux-only" in capsys.readouterr().err
+
+
+def test_apple_silicon_can_still_choose_the_container(tmp_path, monkeypatch):
+    _apple_silicon(monkeypatch, tmp_path)
+    monkeypatch.setattr(fdp_install, "install_container_mode",
+                        lambda d, **kw: (tmp_path / "called").write_text("yes"))
+    fdp_install.main(["--container", "-d", str(tmp_path)])
+    assert (tmp_path / "called").exists()
+
+
+@pytest.mark.parametrize("sys_platform,machine,expected", [
+    ("linux", "x86_64", "linux-64"),
+    ("darwin", "arm64", "osx-arm64"),
+    ("darwin", "x86_64", None),
+    ("linux", "aarch64", None),
+])
+def test_host_platform(sys_platform, machine, expected):
+    assert fdp_install.host_platform(sys_platform, machine) == expected
 
 
 def test_render_latest_with_core_version_is_a_clean_error(capsys):

@@ -2,6 +2,8 @@ import importlib.util
 import os
 import tomllib
 
+import pytest
+
 _SPEC = importlib.util.spec_from_file_location(
     "fdp_install",
     os.path.join(os.path.dirname(__file__), "..", "fdp_installer", "bin", "fdp_install.py"),
@@ -113,3 +115,30 @@ def test_render_subcommand_prints_pinned_toml(capsys):
     out = capsys.readouterr().out
     doc = tomllib.loads(out)
     assert doc["dependencies"]["fdp-core"] == "==1.28.0"
+
+
+def test_platform_defaults_to_linux():
+    assert 'platforms = ["linux-64"]' in fdp_install.render_pixi_toml()
+
+
+def test_osx_arm64_renders_only_that_platform():
+    text = fdp_install.render_pixi_toml(platform="osx-arm64")
+    assert 'platforms = ["osx-arm64"]' in text
+    tomllib.loads(text)
+
+
+def test_labeler_is_refused_off_linux():
+    with pytest.raises(ValueError, match="Linux-only"):
+        fdp_install.render_pixi_toml(with_labeler=True, platform="osx-arm64")
+
+
+def test_unsupported_platform_is_refused():
+    with pytest.raises(ValueError):
+        fdp_install.render_pixi_toml(platform="osx-64")
+
+
+def test_render_subcommand_takes_a_platform(capsys):
+    fdp_install.main(["render", "--platform", "osx-arm64", "--core-version", "1.35.0"])
+    out = capsys.readouterr().out
+    assert 'platforms = ["osx-arm64"]' in out
+    assert '"==1.35.0"' in out
