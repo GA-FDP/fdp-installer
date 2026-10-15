@@ -1,10 +1,20 @@
 name: Conda Package CI/CD
 
+# Two events, one version. See
+# fdp-core/docs/specs/2026-09-15-staging-and-promotion.md section 3.
+#
+#   staging-X.Y.Z  -> build, test on Linux and Apple Silicon, upload to
+#                     ga-fdp/label/staging
+#   release-X.Y.Z  -> relabel those exact bytes to main. NO rebuild.
+#
+# The release tag is cut by the fdp-core bless (tools/promote_members.py),
+# not by hand: every new `fdp-install` user gets what is on main.
 on:
   push:
     branches:
       - main
     tags:
+      - 'staging-*'
       - 'release-*'
   pull_request:
     branches:
@@ -12,6 +22,7 @@ on:
 
 jobs:
   build_and_test:
+    if: "!startsWith(github.ref, 'refs/tags/release-')"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,26 +36,35 @@ jobs:
         with:
           pixi-version: latest
 
-      - name: Set staging channel for pre-release builds
-        if: startsWith(github.ref, 'refs/tags/release-')
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/release-}"
-          if [[ "$VERSION" =~ (rc|a|b)[0-9] ]]; then
-            echo "EXTRA_CHANNEL=ga-fdp/label/staging" >> $GITHUB_ENV
-          fi
-
       - name: Build Conda package
         env:
           BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
           # ga-dfl-labeler has __glibc <2.35 constraint from its build env;
           # override so it installs on newer Ubuntu CI runners
           CONDA_OVERRIDE_GLIBC: "2.28"
-          EXTRA_CHANNEL: ${{ env.EXTRA_CHANNEL }}
         run: |
           pixi global install rattler-build
           cd conda-recipe && bash run_build.sh ${HOME}/outdir
 
-      - name: Keep the built package for the macOS end-to-end job
+      - name: The built version must match the tag
+        # versioneer derives the version from `git describe`, which picks ONE
+        # tag when a commit carries several. Without this, a second staging
+        # tag on the same commit uploads the EARLIER version under the newer tag.
+        if: startsWith(github.ref, 'refs/tags/staging-')
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/staging-}"
+          shopt -s nullglob
+          built=(${HOME}/outdir/noarch/*-${VERSION}-*.conda)
+          if [ ${#built[@]} -eq 0 ]; then
+            echo "::error::tag says ${VERSION}, but nothing of that version was built."
+            echo "::error::Usually: this commit carries another staging- tag and"
+            echo "::error::git describe chose it. Tag a fresh commit."
+            ls -la ${HOME}/outdir/noarch/ || true
+            exit 1
+          fi
+          echo "version ${VERSION}: ${#built[@]} artifact(s)"
+
+      - name: Keep the built package for the macOS job and the upload
         uses: actions/upload-artifact@v4
         with:
           name: noarch-package
@@ -56,6 +76,7 @@ jobs:
     # builds a real environment from the newest blessed fdp-core, then
     # imports, fdp env/run/ls, a ptdata fetch and skills. On Apple Silicon
     # that install is native, so this is the Mac acceptance test.
+    if: "!startsWith(github.ref, 'refs/tags/release-')"
     needs: build_and_test
     runs-on: macos-14
     defaults:
@@ -82,14 +103,16 @@ jobs:
           done
 
   upload:
-    # After both platforms passed.
-    if: startsWith(github.ref, 'refs/tags/release-')
+    # After both platforms passed. Always staging; promotion is the release tag.
+    if: startsWith(github.ref, 'refs/tags/staging-')
     needs: [build_and_test, test_osx]
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash -el {0}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: noarch-package
@@ -103,18 +126,49 @@ jobs:
       - name: Install rattler-build
         run: pixi global install rattler-build
 
-      - name: Upload to Anaconda
-        if: startsWith(github.ref, 'refs/tags/release-')
+      - name: Upload to staging
         run: |
-          VERSION="${GITHUB_REF#refs/tags/release-}"
-          if [[ "$VERSION" =~ (rc|a|b)[0-9] ]]; then
-            LABEL="staging"
-          else
-            LABEL="main"
-          fi
           rattler-build upload anaconda \
             --owner ga-fdp \
-            --channel "$LABEL" \
+            --channel staging \
             --api-key ${{ secrets.ANACONDA_API_TOKEN }} \
             --force \
             outdir/noarch/*.conda
+
+      - name: Retire the superseded staging candidate
+        # AFTER the upload, never before. DELETES NOTHING: the old candidate
+        # is downloaded, checksum-verified and moved to the `attic` label.
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/staging-}"
+          python .github/scripts/channel_tools.py retire \
+            fdp-installer "${VERSION}" "${RUNNER_TEMP}/attic"
+
+      - name: Keep the retired bytes off-channel
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retired-staging-candidates
+          path: ${{ runner.temp }}/attic
+          if-no-files-found: ignore
+          retention-days: 90
+
+  promote:
+    # No build. Relabels the artifact that was already built and verified.
+    if: startsWith(github.ref, 'refs/tags/release-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Move staging -> main
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/release-}"
+          # NOT `anaconda move`: it ignores the version and moves everything
+          # in the source label. See fdp-core spec section 4.2.
+          python .github/scripts/channel_tools.py promote fdp-installer "${VERSION}"
