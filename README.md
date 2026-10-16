@@ -53,14 +53,7 @@ as on Linux:
 This needs fdp-core 1.35.0 or newer (the first whose every package has an
 Apple Silicon build); `--with-labeler` is Linux-only.
 
-On an Intel Mac, or with `--container`, it installs a container-backed `fdp`
-command instead: the Linux environment in an image. Install Podman (`brew
-install podman && podman machine init && podman machine start`) or Colima
-first, then:
-
-    fdp-install -d ~/fdp            # add --container on Apple Silicon
-    export PATH="$HOME/fdp/bin:$PATH"
-    fdp login
+Intel Macs and ARM Linux are not supported.
 
 Full guide: https://ga-fdp.github.io/macos/
 

@@ -9,11 +9,6 @@ import sys
 import os
 from pathlib import Path
 import platform as _platform
-import stat
-
-from fdp_installer import channel, shim as _shim_module
-
-IMAGE_REPO = "ghcr.io/ga-fdp/fdp"
 
 
 _LABELER_DEP = 'ga-dfl-labeler = "==1.0.0"  # carries a glibc <2.35 constraint'
@@ -206,68 +201,7 @@ def _add_install_args(parser):
         "--install-skills", action="store_true",
         help="Also install Claude Code skills to ~/.claude/skills/"
     )
-    parser.add_argument("--container", action="store_true",
-                        help="Install the container-backed fdp shim instead of a "
-                             "pixi environment (the default where there is no "
-                             "native build, such as an Intel Mac)")
     _add_flavor_args(parser)
-
-
-def _pull(cmd):
-    """Run an image pull; failures raise RuntimeError with a hint."""
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"{cmd[0]} pull failed (exit {result.returncode}):\n"
-            f"{result.stderr.strip()}\n\n"
-            "If the container machine is not running: "
-            "`podman machine start` or `colima start`.")
-
-
-def install_container_mode(target_dir, *, core_version=None, runtime=None,
-                           run=None, latest=None, has_image=None):
-    """macOS path: write the shim to <target_dir>/bin/fdp and pull the image.
-
-    `run` executes a command list (default: `_pull`, which raises
-    RuntimeError on failure); `latest` resolves the newest blessed fdp-core (default: the
-    channel).
-    """
-    target_dir = Path(target_dir)
-    run = run or _pull
-    latest = latest or channel.latest_core_version
-    version = core_version or latest()
-    image = f"{IMAGE_REPO}:{version}"
-
-    if runtime is None:
-        runtime = _shim_module.find_runtime(os.environ)
-
-    if has_image is None:
-        def has_image():
-            return subprocess.run([runtime, "image", "inspect", image],
-                                  capture_output=True).returncode == 0
-    if has_image():
-        print(f"{image} is already present; skipping pull")
-    else:
-        print(f"Pulling {image} with {runtime} ...")
-        run([runtime, "pull", "--platform", "linux/amd64", image])
-
-    bin_dir = target_dir / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    source = Path(_shim_module.__file__).read_text(encoding="utf-8")
-    if "__FDP_IMAGE__" not in source:
-        raise RuntimeError("shim template has no __FDP_IMAGE__ placeholder")
-    shim_path = bin_dir / "fdp"
-    shim_path.write_text(source.replace("__FDP_IMAGE__", image), encoding="utf-8")
-    shim_path.chmod(shim_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    print(
-        f"\nFDP is installed as a container-backed command.\n"
-        f"Add it to your PATH:\n\n"
-        f"  export PATH=\"{bin_dir}:$PATH\"\n\n"
-        f"Then `fdp login`, and `fdp run python script.py` runs inside\n"
-        f"{image} with your current directory mounted. `fdp shell` opens a\n"
-        f"shell inside the environment."
-    )
 
 
 def main(argv=None):
@@ -301,22 +235,12 @@ def main(argv=None):
         parser.error("--latest and --core-version are mutually exclusive")
 
     native = host_platform()
-    container = args.container or native is None
+    if native is None:
+        parser.error(
+            f"no FDP build for this machine ({sys.platform}, {_platform.machine()}); "
+            "supported platforms are Linux x86-64 and Apple Silicon Macs")
     target_dir = Path(args.directory).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    if container:
-        if args.install_skills:
-            parser.error("--install-skills does not apply to the container image; "
-                         "run `fdp skills install` through the installed fdp")
-        if args.latest or args.with_labeler:
-            parser.error("--latest and --with-labeler do not apply to the container image")
-        try:
-            install_container_mode(target_dir, core_version=args.core_version)
-        except (RuntimeError, _shim_module.ShimError) as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(2)
-        return
 
     if native == "osx-arm64":
         if args.with_labeler:
@@ -326,8 +250,7 @@ def main(argv=None):
             parser.error(
                 f"fdp-core {args.core_version} does not install on Apple Silicon; "
                 f"the first that does is "
-                f"{'.'.join(map(str, FIRST_OSX_ARM64_CORE))}. Use --container "
-                f"for an older one.")
+                f"{'.'.join(map(str, FIRST_OSX_ARM64_CORE))}.")
 
     check_pixi_installed()
     install_fdp(
